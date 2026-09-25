@@ -1,83 +1,86 @@
 # GPISSI - PROTOCOLO DE VIAGEM - INSANOS MC
-## 🏍️ INSANO NA ESTRADA - Sistema de Roteiro e Telemetria em Tempo Real
+## 🏍️ INSANO NA ESTRADA - Sistema Oficial de Roteiro, Dashboard e Telemetria em Tempo Real
 
-O **GPISSI** é o sistema oficial de gestão e rastreamento de itinerários de estrada do **INSANOS MC**, desenvolvido com paleta visual em **Azul, Laranja e Preto**, integração dos emblemas transparentes `logosembg.png` e `caveirasembg.png`, tipografia moderna do Google Fonts (Montserrat, Rajdhani e Inter, sem fontes estilo Times/serif), base de cidades brasileiras do **IBGE**, catálogo completo de marcas e modelos de veículos (`dados_extras`), máscaras inteligentes (Mercosul e telefone), cálculo automatizado de tempo de estrada e limpeza programada de segurança a cada 72 horas.
+O **GPISSI** (Gestão de Protocolo de Itinerário de Segurança do Insanos MC) é o sistema oficial de monitoramento, roteirização e telemetria de viagens do **INSANOS MC**. Desenvolvido com paleta visual em **Azul Elétrico (`#00b0ff`), Laranja Vibrante (`#ff6600`) e Preto Tático**, integração dos emblemas originais transparentes (`logosembg.png` e `caveirasembg.png`), tipografia moderna (Google Fonts: Montserrat, Rajdhani e Inter, sem fontes estilo Times/serif), base completa de cidades brasileiras do **IBGE**, catálogo completo de marcas e modelos de veículos, cálculo inteligente de rota/distância/tempo e camadas avançadas de proteção e segurança cibernética.
 
 > **"GPISSI - INSANOS MC • Protocolo Oficial de Rota • Ninguém fica para trás!"**
 
 ---
 
-### 🚀 Funcionalidades Implementadas
+### 🌐 Links Oficiais em Produção (Vercel & Local)
 
-1. **🎨 Identidade Visual Laranja e Preto (GPISSI)**:
-   - Tema tático escuro (preto profundo, grafite e acabamento metálico) com destaques em laranja vibrante (`#ff6600`, `#ff7700`) e iluminação neon.
-   - Logo oficial `public/images/logo2.jpg` (com suporte a `logo2.jog`) incorporado na barra de navegação, cabeçalho e quadro do radar com acabamento circular/oval estilizado e transparência.
-
-2. **📍 Cidades Brasileiras com Referência do IBGE**:
-   - Campos de **Origem** e **Destino** com busca preditiva e autocomplete de todos os 5.571 municípios brasileiros no formato `Cidade - UF`.
-
-3. **⏱️ Previsão de Chegada e Rota Automática**:
-   - Cálculo automático da distância rodoviária média entre as cidades e do tempo de viagem.
-   - Estipula automaticamente a **Hora Prevista de Chegada** com base na data e hora de saída (ex: `10:15 (280 km | ~3h 40min)`).
-   - O campo é livre para ajustes manuais pelo integrante caso deseje alterar.
-
-4. **📅 Data de Retorno Sincronizada**:
-   - A data de retorno é preenchida automaticamente com a mesma data da saída, podendo ser alterada conforme o roteiro do irmão.
-
-5. **👤 Dados do Integrante & Lista Oficial de Função/Grau**:
-   - Campo renomeado para **Função/Grau** com a lista ordenada estritamente:
-     1. MUNDIAL - I
-     2. SUPLENTE - II
-     3. COMANDO BRASIL - III
-     4. COMANDO REGIONAL - IV
-     5. EXPANSÃO REGIONAL - V
-     6. DIRETOR REGIONAL - V
-     7. OPERACIONAL REGIONAL - V
-     8. SOCIAL REGIONAL - V
-     9. ADM REGIONAL - V
-     10. COMUNICAÇÃO REGIONAL - V
-     11. SARGENTO DE ARMAS - V
-     12. DIRETOR DE DIVISÃO - VI
-     13. SUB-DIRETOR DE DIVISÃO - VI
-     14. SOCIAL DE DIVISÃO - VI
-     15. ADM DE DIVISÃO - VI
-     16. SARGENTO DE ARMAS - VI
-     17. NÔMADE - VII
-     18. FULL - VIII
-     19. SARGENTO DE ARMAS - VIII
-     20. MEIO-COLETE - IX
-     21. SARGENTO DE ARMAS - IX
-     22. CAMISETA - X
-     23. PP - X
-     24. SARGENTO DE ARMAS - X
-
-6. **🏍️ Veículo, Placa Mercosul e Catálogo de Marcas/Modelos (`dados_extras`)**:
-   - Seção renomeada para **Veículo** com seleção `[ X ] MOTO`, `[ ] CARRO`, `[ ] ÔNIBUS`.
-   - **Placa**: máscara inteligente que aceita tanto o padrão tradicional brasileiro (`ABC-1234`) quanto o padrão Mercosul (`ABC-1B34`).
-   - **Marca e Modelo**: alimentados diretamente da base de dados de `dados_extras` (`marcas-motos.csv`, `modelos-moto.csv`, etc.). Ao escolher uma marca, a lista de modelos é filtrada automaticamente, permitindo seleção ou digitação manual.
-
-7. **📞 Máscara Automática de Telefone**:
-   - Aplicação dinâmica da máscara `(XX) XXXXX-XXXX` (ou `(XX) XXXX-XXXX`) em todos os campos de telefone (integrante e emergência).
-
-8. **⏳ Exclusão Automática após 72 Horas**:
-   - Fichas de viagem que ultrapassarem 72 horas são apagadas automaticamente pelo servidor, mantendo o banco de dados limpo e focado em deslocamentos ativos.
-
-9. **🗺️ OpenFreeMap e Rastreamento em Tempo Real (5 em 5 minutos)**:
-   - Mapas vetoriais ultra-rápidos e nítidos utilizando a infraestrutura do **OpenFreeMap** (`tiles.openfreemap.org/styles/liberty`) através do MapLibre GL JS, sem limites ou chaves de API pagas.
-   - **Rastreamento Automático a cada 5 Minutos**: o piloto transmite sua posição periodicamente enquanto viaja, marcando pontos no trajeto da rodovia.
-   - **Resiliência a Quedas de Sinal**: se o sinal de celular ou 4G cair na serra ou rodovia, o sistema **mantém fixado o último ponto registrado** no mapa para visualização do MC e da família. Quando o sinal de celular retorna, quaisquer pontos acumulados na fila offline são sincronizados automaticamente.
-
-10. **📡 RADAR & Integração com Google Maps, Waze e Apple Mapas**:
-    - Tela **RADAR** com mapa geral de todos os irmãos em deslocamento simultâneo atualizado em tempo real.
-    - Botões rápidos em cada ficha e no mapa para abrir o ponto exato no **Google Maps**, **Waze** e **Apple Mapas**.
-
-10. **🔐 Trava de Encerramento Exclusiva**:
-    - Somente quem gerou a ficha (via chave gravada no aparelho ou PIN de segurança de 4 dígitos) consegue encerrar a viagem no GPISSI. Visitantes contam apenas com visualização e recursos de emergência.
+- 📊 **Dashboard (Página Inicial)**: [https://gpissi.vercel.app/](https://gpissi.vercel.app/)
+- 📝 **Novo Protocolo de Viagem**: [https://gpissi.vercel.app/novo](https://gpissi.vercel.app/novo)
+- 📡 **Radar ao Vivo**: [https://gpissi.vercel.app/radar](https://gpissi.vercel.app/radar)
+- 💻 **Ambiente Local**: `http://localhost:3000`
 
 ---
 
-### 💻 Como Acessar
+### 🛡️ Proteções e Níveis de Segurança Implementados
 
-O servidor já está ativo:
-- **Página Inicial (Novo Protocolo)**: [http://localhost:3000](http://localhost:3000)
-- **Radar na Estrada (Quadro Geral & Mapa)**: [http://localhost:3000/radar](http://localhost:3000/radar)
+Para garantir resiliência contra ataques maliciosos, invasões e abusos na estrada, o sistema conta com:
+
+1. **Helmet & Content Security Policy (CSP)**:
+   - Proteção contra **XSS (Cross-Site Scripting)**, **Clickjacking** (`frame-ancestors 'self'`), MIME-type sniffing e injeção de scripts externos.
+   - Whitelist estrita permitindo apenas fontes autorizadas (Google Fonts, MapLibre via unpkg, OpenFreeMap tiles, OpenStreetMap e IBGE).
+
+2. **Defesa Contra Ataques de Força Bruta no PIN (`express-rate-limit`)**:
+   - Limite estrito de tentativas no endpoint de encerramento (`/api/viagens/:id/encerrar`): máximo de 15 requisições por IP a cada 15 minutos. Tentativas sucessivas bloqueiam o IP temporariamente, impedindo ataques de força bruta no PIN de 4 dígitos.
+   - Limitador de criação de viagens (`/api/viagens`): máximo de 25 protocolos a cada 15 minutos por IP, evitando spamming e negação de serviço.
+   - Limitador de check-ins de telemetria GPS para conter flood de tráfego.
+   - Rate limit global para toda a API REST (`/api/*`).
+
+3. **Validador & Gerador de PIN Não Sequencial**:
+   - Rejeição obrigatória tanto no front-end quanto no back-end de números sequenciais crescentes (ex: `1234`, `2345`, `3456`, `6789`), decrescentes (ex: `4321`, `5432`, `9876`, `3210`) e dígitos repetidos (`1111`, `2222`, `9999`).
+   - Endpoint dedicado [`GET /api/gerar-pin`](file:///c:/projetos/gpissi/server.js) com geração criptograficamente segura de PINs não triviais e botão `🎲 Gerar` na interface.
+
+4. **Sanitização de Entradas & Prevenção de Injeção**:
+   - Sanitização de strings em todos os campos (`sanitizeString`) removendo tags HTML, scripts maliciosos e protocolos javascript.
+   - Validação estrita de formato de ID de viagens (`^[A-Za-z0-9_-]{4,35}$`).
+
+5. **Proteção Contra Payload Bomb / DOS**:
+   - Limite rígido de tamanho do corpo de requisição (`express.json({ limit: '100kb' })`), prevenindo estouro de memória (Out-Of-Memory DOS).
+
+6. **Ocultação de Erros e Stack Traces**:
+   - Middleware global de captura de erros que não expõe detalhes de arquivos internos, variáveis de ambiente ou caminhos do servidor para os clientes.
+
+7. **Compatibilidade Multi-Ambiente (Vercel Serverless & Local)**:
+   - Em produção na nuvem Vercel, o armazenamento temporário opera em `/tmp/gpissi_data` com cache resiliente em memória, evitando erros de leitura/escrita em sistemas de arquivos somente-leitura.
+
+---
+
+### 🚀 Funcionalidades Principais
+
+1. **📊 Dashboard como Página Inicial (`/`)**:
+   - Visão executiva com contadores KPI (Na Estrada Agora, Viagens Encerradas, Total).
+   - Divisão clara entre **"Na Estrada Agora"** (com badge pulsante e tempo decorrido) e **"Viagens Encerradas"**.
+   - **Clique e Acompanhe no Radar**: clicar em qualquer card de viagem abre diretamente a visualização focada no Radar.
+   - Retenção inteligente de **2 horas** para viagens concluídas (sendo expurgadas automaticamente após 2h do encerramento).
+   - Ordenação cronológica estrita do mais recente para o mais antigo.
+   - Polling automático a cada 20 segundos.
+
+2. **📝 Novo Protocolo (`/novo`)**:
+   - Cidades do IBGE com busca preditiva.
+   - Cálculo automático de distância rodoviária, duração e previsão de chegada.
+   - Catálogo de veículos por marca e modelo filtrados em tempo real.
+   - Máscaras para telefones e placas (padrão Brasil e Mercosul).
+   - Ficha formatada oficial pronta para envio no WhatsApp e cópia com um clique.
+
+3. **📡 Radar de Estrada (`/radar`)**:
+   - Mapa vetorial interativo com **OpenFreeMap** (`tiles.openfreemap.org/styles/liberty`) via MapLibre GL JS.
+   - Atualização em tempo real de posições GPS a cada 5 minutos.
+   - Fallback offline que mantém o último ponto registrado caso o sinal de operadora caia em serras ou rodovias.
+
+---
+
+### 📦 Sincronização com o GitHub
+
+O repositório local está inicializado com a branch `main`, commits realizados e remote apontando para:
+`https://github.com/jrbranquinho-sudoe/gpissi.git`
+
+Para finalizar o push:
+1. Acesse [https://github.com/new](https://github.com/new) e crie um repositório chamado **`gpissi`** (sob a conta `jrbranquinho-sudoe`).
+2. No terminal do projeto, execute:
+   ```bash
+   git push -u origin main
+   ```
