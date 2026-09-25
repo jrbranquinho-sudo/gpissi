@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
-const { v4: uuidv4 } = require('uuid');
+const crypto = require('crypto');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -575,7 +575,7 @@ app.post('/api/viagens', createTripLimiter, async (req, res) => {
     ]);
 
     const id = 'INS-' + Math.random().toString(36).substring(2, 6).toUpperCase() + '-' + Math.floor(1000 + Math.random() * 9000);
-    const admin_token = uuidv4();
+    const admin_token = crypto.randomUUID();
 
     let vDetalhe = transporte_detalhe || '';
     if (cleanTransporteTipo === 'MOTO' || cleanTransporteTipo === 'CARRO') {
