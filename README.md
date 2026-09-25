@@ -73,14 +73,7 @@ Para garantir resiliência contra ataques maliciosos, invasões e abusos na estr
 
 ---
 
-### 📦 Sincronização com o GitHub
+### 📦 Repositório GitHub
 
-O repositório local está inicializado com a branch `main`, commits realizados e remote apontando para:
-`https://github.com/jrbranquinho-sudoe/gpissi.git`
-
-Para finalizar o push:
-1. Acesse [https://github.com/new](https://github.com/new) e crie um repositório chamado **`gpissi`** (sob a conta `jrbranquinho-sudoe`).
-2. No terminal do projeto, execute:
-   ```bash
-   git push -u origin main
-   ```
+- 🐙 **GitHub Oficial**: [https://github.com/jrbranquinho-sudo/gpissi](https://github.com/jrbranquinho-sudo/gpissi)
+- Branch Principal: `main`
