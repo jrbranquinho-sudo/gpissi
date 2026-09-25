@@ -10,5 +10,6 @@ yarn-error.log*
 test_verify.js
 .DS_Store
 Thumbs.db
+*.zip
 
 .vercel
