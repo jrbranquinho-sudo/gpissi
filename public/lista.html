@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
+  <title>GPISSI | RADAR (OpenFreeMap) | INSANOS MC</title>
+  <meta name="description" content="GPISSI - Radar em tempo real com OpenFreeMap, localização exata, Google Maps e Waze">
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="icon" type="image/png" href="/images/caveirasembg.png">
+  
+  <!-- MapLibre GL JS for OpenFreeMap -->
+  <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
+</head>
+<body>
+
+  <!-- NAVBAR -->
+  <header class="navbar">
+    <div class="nav-container">
+      <a href="/" class="nav-brand">
+        <div class="brand-logo-container">
+          <img src="/images/logosembg.png" alt="Logo Insanos MC" class="brand-logo-img">
+        </div>
+        <div class="brand-text">
+          <span class="brand-title"><span class="gp-blue">GP</span><span class="issi-orange">ISSI</span></span>
+          <span class="brand-subtitle">Radar &bull; Quadro de Estrada</span>
+        </div>
+      </a>
+      <nav class="nav-links">
+        <a href="/" class="nav-btn">📊 Dashboard</a>
+        <a href="/novo" class="nav-btn">📝 Novo Protocolo</a>
+        <a href="/radar" class="nav-btn active">📡 Radar</a>
+      </nav>
+    </div>
+  </header>
+
+  <!-- MAIN WRAPPER -->
+  <main class="full-width-wrapper">
+    
+    <div class="protocol-hero" style="padding: 1.8rem 1.5rem;">
+      <div class="hero-logo-center" style="width: 80px; height: 80px;">
+        <img src="/images/logosembg.png" alt="Logo Insanos MC">
+      </div>
+      <div class="hero-badge">📡 <span class="gp-blue">GP</span><span class="issi-orange">ISSI</span> &bull; MAPA EM TEMPO REAL (OPENFREEMAP)</div>
+      <h1 class="protocol-title">
+        <img src="/images/caveirasembg.png" alt="Caveira" class="skull-badge-inline">
+        RADAR
+        <img src="/images/caveirasembg.png" alt="Caveira" class="skull-badge-inline">
+      </h1>
+      <p class="protocol-subtitle">
+        Acompanhe em tempo real a rota e localização exata de cada integrante no mapa (OpenFreeMap). Se o sinal de celular oscilar na estrada, o <strong>último registro é mantido automaticamente</strong>.
+      </p>
+    </div>
+
+    <!-- RADAR MAP CONTAINER (OPENFREEMAP) -->
+    <div class="map-container-box" style="margin-bottom: 2rem;">
+      <div class="map-toolbar">
+        <div class="route-stats-bar">
+          <div class="route-stat-item">
+            <span>🔥 Integrantes na Estrada Agora:</span>
+            <strong id="radarActiveCount" style="color: var(--issi-orange-bright);">0</strong>
+          </div>
+          <div class="route-stat-item">
+            <span>🏁 Protocolos Concluídos:</span>
+            <strong id="radarFinishedCount" style="color: var(--accent-green);">0</strong>
+          </div>
+          <div class="route-stat-item">
+            <span>📡 Atualização:</span>
+            <strong style="color: #00e676;">A cada 5 min no trajeto</strong>
+          </div>
+        </div>
+        <div style="font-size: 0.82rem; color: var(--text-muted);">
+          Mapas fornecidos por OpenFreeMap (Liberty)
+        </div>
+      </div>
+
+      <!-- MAPLIBRE CONTAINER -->
+      <div id="radarMap" style="width: 100%; height: 440px; background: #08090b;"></div>
+    </div>
+
+    <!-- FILTER BAR -->
+    <div style="background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 1rem 1.25rem; margin-bottom: 1.5rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+      <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;" id="filterTabs">
+        <button class="nav-btn active" data-filter="all">Todas as Viagens (<span id="countAll">0</span>)</button>
+        <button class="nav-btn" data-filter="open">🔥 Na Estrada (<span id="countOpen">0</span>)</button>
+        <button class="nav-btn" data-filter="closed">✓ Concluídas (<span id="countClosed">0</span>)</button>
+      </div>
+
+      <div style="width: 280px; max-width: 100%;">
+        <input type="text" id="searchInput" class="form-control" placeholder="Buscar integrante, cidade, grau...">
+      </div>
+    </div>
+
+    <!-- GRID OF TRIPS -->
+    <div id="tripsGrid" class="radar-grid">
+      <div style="grid-column: 1 / -1; text-align: center; padding: 3rem 1rem; color: var(--text-muted);">
+        Carregando radar do GPISSI...
+      </div>
+    </div>
+
+  </main>
+
+  <!-- FOOTER -->
+  <footer class="footer">
+    <p class="footer-text">
+      <span class="gp-blue">GP</span><span class="issi-orange">ISSI</span> - <strong>INSANOS MC</strong> &bull; Protocolo Oficial de Rota &bull; <strong>Ninguém fica para trás!</strong>
+    </p>
+  </footer>
+
+  <!-- MapLibre GL JS for OpenFreeMap -->
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  
+  <script>
+    let allTrips = [];
+    let currentFilter = 'all';
+    let radarMap = null;
+    let radarMarkers = [];
+
+    document.addEventListener('DOMContentLoaded', () => {
+      initRadarMap();
+      fetchTrips();
+
+      // Auto-poll radar updates every 30 seconds
+      setInterval(() => {
+        fetchTrips(true);
+      }, 30000);
+
+      // Filters
+      document.querySelectorAll('#filterTabs button').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('#filterTabs button').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          currentFilter = btn.dataset.filter;
+          renderTrips();
+        });
+      });
+
+      // Search
+      document.getElementById('searchInput').addEventListener('input', (e) => {
+        renderTrips(e.target.value.toLowerCase());
+      });
+    });
+
+    function initRadarMap() {
+      radarMap = new maplibregl.Map({
+        container: 'radarMap',
+        style: 'https://tiles.openfreemap.org/styles/liberty',
+        center: [-47.92, -15.78],
+        zoom: 4.5
+      });
+
+      radarMap.addControl(new maplibregl.NavigationControl(), 'top-right');
+      radarMap.addControl(new maplibregl.FullscreenControl(), 'top-right');
+    }
+
+    async function fetchTrips(isSilent = false) {
+      try {
+        const res = await fetch('/api/viagens');
+        if (!res.ok) throw new Error('Erro ao listar viagens');
+        allTrips = await res.json();
+        updateCounts();
+        renderRadarMapPins();
+        renderTrips();
+      } catch (err) {
+        if (!isSilent) {
+          document.getElementById('tripsGrid').innerHTML = `
+            <div style="grid-column: 1 / -1; text-align: center; color: var(--issi-orange); padding: 2rem;">
+              Falha ao carregar viagens do radar: ${err.message}
+            </div>
+          `;
+        }
+      }
+    }
+
+    function updateCounts() {
+      const open = allTrips.filter(t => t.status === 'EM ANDAMENTO').length;
+      const closed = allTrips.filter(t => t.status === 'CONCLUÍDA').length;
+      document.getElementById('countAll').textContent = allTrips.length;
+      document.getElementById('countOpen').textContent = open;
+      document.getElementById('countClosed').textContent = closed;
+      document.getElementById('radarActiveCount').textContent = open;
+      document.getElementById('radarFinishedCount').textContent = closed;
+    }
+
+    function renderRadarMapPins() {
+      if (!radarMap) return;
+
+      if (!radarMap.isStyleLoaded()) {
+        radarMap.once('load', () => renderRadarMapPins());
+        return;
+      }
+
+      // Clear existing markers
+      radarMarkers.forEach(m => m.remove());
+      radarMarkers = [];
+
+      const openTrips = allTrips.filter(t => t.status === 'EM ANDAMENTO');
+      if (openTrips.length === 0) return;
+
+      const bounds = new maplibregl.LngLatBounds();
+
+      openTrips.forEach(t => {
+        let lat = -23.55;
+        let lng = -46.63;
+        let locName = t.origem;
+        let isLastGps = false;
+
+        if (t.checkins && t.checkins.length > 1) {
+          const last = t.checkins[t.checkins.length - 1];
+          lat = last.lat;
+          lng = last.lng;
+          locName = last.cidade || 'Último Ponto GPS no Trajeto';
+          isLastGps = true;
+        } else if (t.origem_geo) {
+          lat = t.origem_geo.lat;
+          lng = t.origem_geo.lon;
+        }
+
+        const el = document.createElement('div');
+        el.className = 'custom-maplibre-marker';
+        el.innerHTML = `
+          <div style="background: #ff6600; color: #000; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 2.5px solid #000; box-shadow: 0 0 15px rgba(255, 102, 0, 0.95); cursor: pointer;">
+            <img src="/images/caveirasembg.png" style="height: 22px; width: auto;" alt="Caveira">
+          </div>
+        `;
+
+        const googleLink = `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+        const wazeLink = `https://waze.com/ul?ll=${lat},${lng}&navigate=yes`;
+        const appleLink = `https://maps.apple.com/?daddr=${lat},${lng}&dirflg=d`;
+
+        const popup = new maplibregl.Popup({ offset: 25 }).setHTML(`
+          <div style="font-family: sans-serif; color: #000; min-width: 210px;">
+            <div style="font-weight: bold; font-size: 14px; color: #ff6600; display: flex; align-items: center; gap: 4px;">
+              <img src="/images/caveirasembg.png" style="height: 18px; width: auto;" alt="Caveira">
+              ${t.nome_colete}
+            </div>
+            <div style="font-size: 12px; color: #555;">${t.grau || 'Integrante'}</div>
+            <div style="margin: 6px 0; font-size: 12px;"><strong>Rota:</strong> ${t.origem} ➔ ${t.destino}</div>
+            <div style="font-size: 11px; color: #222; margin-bottom: 4px;">
+              <strong>Ponto no Trajeto:</strong> ${locName}
+            </div>
+            <div style="font-size: 10px; color: #666; margin-bottom: 8px;">
+              ${isLastGps ? '🟢 Ponto atualizado (Último registro mantido se sem sinal)' : 'Ponto inicial de partida'}
+            </div>
+            <div style="display: flex; gap: 5px; flex-wrap: wrap;">
+              <a href="${googleLink}" target="_blank" style="background: #1a73e8; color: #fff; padding: 4px 8px; border-radius: 4px; font-size: 11px; text-decoration: none; font-weight: bold;">Google Maps</a>
+              <a href="${wazeLink}" target="_blank" style="background: #33ccff; color: #000; padding: 4px 8px; border-radius: 4px; font-size: 11px; text-decoration: none; font-weight: bold;">Waze</a>
+              <a href="/tracker?id=${t.id}" style="background: #ff6600; color: #000; padding: 4px 8px; border-radius: 4px; font-size: 11px; text-decoration: none; font-weight: bold;">Ver Rota</a>
+            </div>
+          </div>
+        `);
+
+        const marker = new maplibregl.Marker({ element: el })
+          .setLngLat([lng, lat])
+          .setPopup(popup)
+          .addTo(radarMap);
+
+        radarMarkers.push(marker);
+        bounds.extend([lng, lat]);
+      });
+
+      if (!bounds.isEmpty()) {
+        radarMap.fitBounds(bounds, { padding: 60, maxZoom: 12 });
+      }
+    }
+
+    function formatDateBR(dateString) {
+      if (!dateString) return 'A definir';
+      const parts = dateString.split('-');
+      if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
+      return dateString;
+    }
+
+    function renderTrips(searchTerm = '') {
+      const grid = document.getElementById('tripsGrid');
+
+      let filtered = allTrips;
+      if (currentFilter === 'open') {
+        filtered = filtered.filter(t => t.status === 'EM ANDAMENTO');
+      } else if (currentFilter === 'closed') {
+        filtered = filtered.filter(t => t.status === 'CONCLUÍDA');
+      }
+
+      if (searchTerm) {
+        filtered = filtered.filter(t => 
+          (t.nome_colete && t.nome_colete.toLowerCase().includes(searchTerm)) ||
+          (t.origem && t.origem.toLowerCase().includes(searchTerm)) ||
+          (t.destino && t.destino.toLowerCase().includes(searchTerm)) ||
+          (t.grau && t.grau.toLowerCase().includes(searchTerm)) ||
+          (t.transporte_marca && t.transporte_marca.toLowerCase().includes(searchTerm)) ||
+          (t.transporte_modelo && t.transporte_modelo.toLowerCase().includes(searchTerm))
+        );
+      }
+
+      if (filtered.length === 0) {
+        grid.innerHTML = `
+          <div style="grid-column: 1 / -1; text-align: center; padding: 3rem 1rem; color: var(--text-muted); background: var(--bg-card); border-radius: var(--radius-md); border: 1px dashed var(--border-subtle);">
+            <div style="font-size: 2.5rem; margin-bottom: 0.5rem;"><img src="/images/caveirasembg.png" style="height: 48px; width: auto;" alt="Caveira"></div>
+            <p style="font-size: 1.1rem; color: #cbd5e1; font-weight: 600;">Nenhum protocolo encontrado neste filtro.</p>
+            <p style="font-size: 0.9rem; margin-top: 0.4rem;">Cadastre uma nova rota para acompanhar no mapa!</p>
+            <a href="/" class="btn-primary-insano" style="margin-top: 1rem; padding: 0.6rem 1.4rem; font-size: 0.95rem;">+ Cadastrar Nova Rota</a>
+          </div>
+        `;
+        return;
+      }
+
+      grid.innerHTML = filtered.map(t => {
+        const isOpen = t.status === 'EM ANDAMENTO';
+        const badgeHtml = isOpen 
+          ? `<div class="status-badge open" style="padding: 0.25rem 0.65rem; font-size: 0.78rem;"><span class="status-dot"></span><span>NA ESTRADA</span></div>`
+          : `<div class="status-badge closed" style="padding: 0.25rem 0.65rem; font-size: 0.78rem;"><span class="status-dot"></span><span>CONCLUÍDA</span></div>`;
+
+        let vDesc = t.transporte_detalhe;
+        if (!vDesc && t.transporte_placa) vDesc = `Placa: ${t.transporte_placa}`;
+
+        let targetLat = (t.destino_geo && t.destino_geo.lat) || (t.origem_geo && t.origem_geo.lat) || -23.55;
+        let targetLng = (t.destino_geo && t.destino_geo.lon) || (t.origem_geo && t.origem_geo.lon) || -46.63;
+        if (t.checkins && t.checkins.length > 1) {
+          const last = t.checkins[t.checkins.length - 1];
+          targetLat = last.lat;
+          targetLng = last.lng;
+        }
+
+        const googleNavUrl = `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(t.origem)}&destination=${encodeURIComponent(t.destino)}`;
+        const wazeNavUrl = `https://waze.com/ul?ll=${targetLat},${targetLng}&navigate=yes`;
+
+        return `
+          <div class="radar-card" style="border-left: 3px solid ${isOpen ? 'var(--issi-orange)' : 'var(--accent-green)'}">
+            <div>
+              <div class="radar-card-header">
+                <div>
+                  <div class="radar-pilot">
+                    <img src="/images/caveirasembg.png" alt="Caveira" class="skull-icon-xs">
+                    ${t.nome_colete}
+                  </div>
+                  <div class="radar-grau">${t.grau || 'Integrante'}</div>
+                </div>
+                ${badgeHtml}
+              </div>
+
+              <div class="radar-route">
+                <strong>${t.origem}</strong>
+                <span>➔</span>
+                <strong>${t.destino}</strong>
+              </div>
+
+              <div class="radar-dates">
+                <div>📅 Saída: ${formatDateBR(t.data_saida)} às ${t.hora_saida || '--:--'}</div>
+                <div>🏁 Previsão: ${t.previsao_chegada || 'Conforme tráfego'}</div>
+                <div>🏍️ Veículo: ${t.transporte_tipo} ${vDesc ? `(${vDesc})` : ''}</div>
+              </div>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 0.4rem; margin-top: 0.85rem;">
+              <a href="/tracker?id=${t.id}" class="btn-tracker-open" style="padding: 0.6rem; font-size: 0.9rem;">
+                🗺️ Acompanhar Rota (OpenFreeMap)
+              </a>
+              <div style="display: flex; gap: 0.4rem;">
+                <a href="${googleNavUrl}" target="_blank" class="btn-nav-app btn-nav-google" style="flex: 1; justify-content: center; font-size: 0.8rem; padding: 0.4rem;">
+                  🌐 Google Maps
+                </a>
+                <a href="${wazeNavUrl}" target="_blank" class="btn-nav-app btn-nav-waze" style="flex: 1; justify-content: center; font-size: 0.8rem; padding: 0.4rem;">
+                  🚙 Waze
+                </a>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+  </script>
+</body>
+</html>

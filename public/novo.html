@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
+  <title>GPISSI | PROTOCOLO DE VIAGEM - INSANOS MC | INSANO NA ESTRADA</title>
+  <meta name="description" content="GPISSI - Gestão de Protocolo de Itinerário de Segurança do Insanos MC">
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="icon" type="image/png" href="/images/caveirasembg.png">
+</head>
+<body>
+
+  <!-- NAVBAR -->
+  <header class="navbar">
+    <div class="nav-container">
+      <a href="/" class="nav-brand">
+        <div class="brand-logo-container">
+          <img src="/images/logosembg.png" alt="Logo Insanos MC" class="brand-logo-img">
+        </div>
+        <div class="brand-text">
+          <span class="brand-title"><span class="gp-blue">GP</span><span class="issi-orange">ISSI</span></span>
+          <span class="brand-subtitle">Protocolo de Viagem &bull; Insanos MC</span>
+        </div>
+      </a>
+      <nav class="nav-links">
+        <a href="/" class="nav-btn">📊 Dashboard</a>
+        <a href="/novo" class="nav-btn active">📝 Novo Protocolo</a>
+        <a href="/radar" class="nav-btn">📡 Radar</a>
+      </nav>
+    </div>
+  </header>
+
+  <!-- MAIN CONTAINER -->
+  <main class="main-wrapper">
+    
+    <!-- HERO TITLE & LOGO -->
+    <div class="protocol-hero">
+      <div class="hero-logo-center">
+        <img src="/images/logosembg.png" alt="Logo Insanos MC">
+      </div>
+      <div class="hero-badge">⚡ <span class="gp-blue">GP</span><span class="issi-orange">ISSI</span> &bull; Monitoramento & Segurança na Estrada</div>
+      <h1 class="protocol-title">
+        <img src="/images/caveirasembg.png" alt="Caveira" class="skull-badge-inline">
+        PROTOCOLO DE VIAGEM - <span class="issi-orange">INSANOS MC</span>
+        <img src="/images/caveirasembg.png" alt="Caveira" class="skull-badge-inline">
+      </h1>
+      <p class="protocol-subtitle">
+        Cadastre seu roteiro antes de sair. A ficha permanecerá <strong>aberta e rastreável</strong> até que <strong>somente quem registrou</strong> confirme a chegada e encerre. Fichas sem encerramento são apagadas automaticamente após 72 horas.
+      </p>
+    </div>
+
+    <!-- FORM -->
+    <form id="protocolForm" autocomplete="off">
+
+      <!-- SECTION 1: INFORMAÇÕES DA ROTA -->
+      <section class="form-section">
+        <div class="section-header">
+          <span class="icon">📍</span> INFORMAÇÕES DA ROTA
+        </div>
+
+        <div class="grid-2" style="margin-bottom: 1.2rem;">
+          <div class="form-group">
+            <label for="origem">Origem [Cidade/Estado - IBGE] <span class="required">*</span></label>
+            <input type="text" id="origem" name="origem" class="form-control" placeholder="Digite para buscar cidade (Ex: São Paulo - SP)" required>
+            <div id="origem_suggestions" class="autocomplete-list"></div>
+          </div>
+          <div class="form-group">
+            <label for="destino">Destino [Cidade/Estado - IBGE] <span class="required">*</span></label>
+            <input type="text" id="destino" name="destino" class="form-control" placeholder="Digite para buscar cidade (Ex: Santos - SP)" required>
+            <div id="destino_suggestions" class="autocomplete-list"></div>
+          </div>
+        </div>
+
+        <div class="grid-2" style="margin-bottom: 1.2rem;">
+          <div class="form-group">
+            <label for="data_saida">Data de Saída <span class="required">*</span></label>
+            <input type="date" id="data_saida" name="data_saida" class="form-control" required>
+          </div>
+          <div class="form-group">
+            <label for="hora_saida">Hora de Saída <span class="required">*</span></label>
+            <input type="time" id="hora_saida" name="hora_saida" class="form-control" required>
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="form-group">
+            <label for="previsao_chegada">
+              Previsão de Chegada (Calculada automaticamente pela distância)
+              <span id="calcIndicator" style="font-size: 0.75rem; color: var(--issi-orange); display: none;">⚡ Calculando rota...</span>
+            </label>
+            <input type="text" id="previsao_chegada" name="previsao_chegada" class="form-control" placeholder="Calculado pela distância média (pode ser alterada)">
+          </div>
+          <div class="form-group">
+            <label for="data_retorno">Data de Retorno (Mesma da saída por padrão, pode ser alterada)</label>
+            <input type="date" id="data_retorno" name="data_retorno" class="form-control">
+          </div>
+        </div>
+      </section>
+
+      <!-- SECTION 2: DADOS DO INTEGRANTE -->
+      <section class="form-section">
+        <div class="section-header">
+          <span class="icon">👤</span> DADOS DO INTEGRANTE
+        </div>
+
+        <div class="grid-3">
+          <div class="form-group">
+            <label for="nome_colete">Nome do Colete <span class="required">*</span></label>
+            <input type="text" id="nome_colete" name="nome_colete" class="form-control" placeholder="Ex: Caveira / Lobo / Trovão" required>
+          </div>
+          
+          <div class="form-group">
+            <label for="grau">Função/Grau <span class="required">*</span></label>
+            <select id="grau" name="grau" class="form-control" required>
+              <option value="" disabled selected>Selecione sua Função/Grau...</option>
+              <option value="MUNDIAL - I">MUNDIAL - I</option>
+              <option value="SUPLENTE - II">SUPLENTE - II</option>
+              <option value="COMANDO BRASIL - III">COMANDO BRASIL - III</option>
+              <option value="COMANDO REGIONAL - IV">COMANDO REGIONAL - IV</option>
+              <option value="EXPANSÃO REGIONAL - V">EXPANSÃO REGIONAL - V</option>
+              <option value="DIRETOR REGIONAL - V">DIRETOR REGIONAL - V</option>
+              <option value="OPERACIONAL REGIONAL - V">OPERACIONAL REGIONAL - V</option>
+              <option value="SOCIAL REGIONAL - V">SOCIAL REGIONAL - V</option>
+              <option value="ADM REGIONAL - V">ADM REGIONAL - V</option>
+              <option value="COMUNICAÇÃO REGIONAL - V">COMUNICAÇÃO REGIONAL - V</option>
+              <option value="SARGENTO DE ARMAS - V">SARGENTO DE ARMAS - V</option>
+              <option value="DIRETOR DE DIVISÃO - VI">DIRETOR DE DIVISÃO - VI</option>
+              <option value="SUB-DIRETOR DE DIVISÃO - VI">SUB-DIRETOR DE DIVISÃO - VI</option>
+              <option value="SOCIAL DE DIVISÃO - VI">SOCIAL DE DIVISÃO - VI</option>
+              <option value="ADM DE DIVISÃO - VI">ADM DE DIVISÃO - VI</option>
+              <option value="SARGENTO DE ARMAS - VI">SARGENTO DE ARMAS - VI</option>
+              <option value="NÔMADE - VII">NÔMADE - VII</option>
+              <option value="FULL - VIII">FULL - VIII</option>
+              <option value="SARGENTO DE ARMAS - VIII">SARGENTO DE ARMAS - VIII</option>
+              <option value="MEIO-COLETE - IX">MEIO-COLETE - IX</option>
+              <option value="SARGENTO DE ARMAS - IX">SARGENTO DE ARMAS - IX</option>
+              <option value="CAMISETA - X">CAMISETA - X</option>
+              <option value="PP - X">PP - X</option>
+              <option value="SARGENTO DE ARMAS - X">SARGENTO DE ARMAS - X</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="telefone">Telefone (WhatsApp) <span class="required">*</span></label>
+            <input type="tel" id="telefone" name="telefone" class="form-control phone-mask" placeholder="(XX) XXXXX-XXXX" required>
+          </div>
+        </div>
+      </section>
+
+      <!-- SECTION 3: VEÍCULO -->
+      <section class="form-section">
+        <div class="section-header">
+          <span class="icon">🏍️</span> VEÍCULO
+        </div>
+
+        <!-- RADIO SELECTION -->
+        <div class="transport-selector">
+          <label class="transport-option selected" id="opt-moto">
+            <input type="radio" name="transporte_tipo" value="MOTO" checked>
+            <span class="t-icon">🏍️</span>
+            <span class="t-label">[ X ] MOTO</span>
+          </label>
+          <label class="transport-option" id="opt-carro">
+            <input type="radio" name="transporte_tipo" value="CARRO">
+            <span class="t-icon">🚗</span>
+            <span class="t-label">[ &nbsp; ] CARRO</span>
+          </label>
+          <label class="transport-option" id="opt-onibus">
+            <input type="radio" name="transporte_tipo" value="ÔNIBUS">
+            <span class="t-icon">🚌</span>
+            <span class="t-label">[ &nbsp; ] ÔNIBUS</span>
+          </label>
+        </div>
+
+        <!-- MOTO / CARRO DETALHES -->
+        <div id="veiculo_moto_carro_box">
+          <div class="grid-3" style="margin-bottom: 0.5rem;">
+            <div class="form-group">
+              <label for="transporte_placa">Placa (Brasil ou Mercosul) <span class="required">*</span></label>
+              <input type="text" id="transporte_placa" name="transporte_placa" class="form-control placa-mask" placeholder="ABC-1234 ou ABC-1B34" maxlength="8">
+            </div>
+
+            <div class="form-group">
+              <label for="transporte_marca">Marca do Veículo</label>
+              <select id="transporte_marca" name="transporte_marca" class="form-control">
+                <option value="">Carregando marcas...</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="transporte_modelo">Modelo do Veículo (Selecione ou digite)</label>
+              <input type="text" id="transporte_modelo" name="transporte_modelo" list="modelos_datalist" class="form-control" placeholder="Selecione a marca primeiro ou digite...">
+              <datalist id="modelos_datalist"></datalist>
+            </div>
+          </div>
+        </div>
+
+        <!-- ONIBUS DETALHES -->
+        <div id="veiculo_onibus_box" style="display: none;">
+          <div class="form-group">
+            <label for="transporte_detalhe">Empresa e Assento do Ônibus</label>
+            <input type="text" id="transporte_detalhe" name="transporte_detalhe" class="form-control" placeholder="Ex: Viação Cometa | Poltrona 18 Leito">
+          </div>
+        </div>
+
+      </section>
+
+      <!-- SECTION 4: ACOMPANHANTE(S) -->
+      <section class="form-section">
+        <div class="section-header">
+          <span class="icon">👥</span> ACOMPANHANTE(S)
+        </div>
+
+        <div class="companion-toggle-box">
+          <span style="font-size: 0.9rem; font-weight: 600; color: var(--text-muted);">Vai acompanhado?</span>
+          <label class="radio-pill">
+            <input type="radio" name="vai_acompanhado" value="Não" checked> Não
+          </label>
+          <label class="radio-pill">
+            <input type="radio" name="vai_acompanhado" value="Sim"> Sim
+          </label>
+        </div>
+
+        <div class="form-group" id="acompanhante_box" style="display: none;">
+          <label for="quem_vai_junto">Quem vai junto? [Nome do Garupa ou Passageiros]</label>
+          <input type="text" id="quem_vai_junto" name="quem_vai_junto" class="form-control" placeholder="Ex: Maria (Esposa) / Irmão Predador">
+        </div>
+      </section>
+
+      <!-- SECTION 5: EMERGÊNCIA -->
+      <section class="form-section">
+        <div class="section-header">
+          <span class="icon">🆘</span> CONTATO DE EMERGÊNCIA
+        </div>
+
+        <div class="grid-2">
+          <div class="form-group">
+            <label for="emergencia_contato">Contato [Nome do Familiar/Amigo/Irmão] <span class="required">*</span></label>
+            <input type="text" id="emergencia_contato" name="emergencia_contato" class="form-control" placeholder="Ex: Ana Clara (Esposa) / Pres. Regional" required>
+          </div>
+          <div class="form-group">
+            <label for="emergencia_telefone">Telefone [Número de Emergência] <span class="required">*</span></label>
+            <input type="tel" id="emergencia_telefone" name="emergencia_telefone" class="form-control phone-mask" placeholder="(XX) XXXXX-XXXX" required>
+          </div>
+        </div>
+      </section>
+
+      <!-- SECTION 6: OBSERVAÇÕES E RESUMO -->
+      <section class="form-section">
+        <div class="section-header">
+          <span class="icon">📝</span> OBSERVAÇÕES E RESUMO
+        </div>
+
+        <div class="form-group" style="margin-bottom: 1.2rem;">
+          <label for="observacoes_notas">Notas [Ex: Condições do tempo, pontos de parada, postos de apoio]</label>
+          <textarea id="observacoes_notas" name="observacoes_notas" class="form-control" placeholder="Ex: Parada no Graal km 120 para abastecer; serra com pista molhada."></textarea>
+        </div>
+
+        <div class="form-group">
+          <label for="observacoes_resumo">Resumo [Espaço para relato PRÉ-viagem]</label>
+          <textarea id="observacoes_resumo" name="observacoes_resumo" class="form-control" placeholder="Ex: Deslocamento oficial de comboio com a regional para encontro nacional."></textarea>
+        </div>
+      </section>
+
+      <!-- SECTION 7: SEGURANÇA E ENCERRAMENTO -->
+      <section class="form-section">
+        <div class="section-header">
+          <span class="icon">🔐</span> CONTROLE EXCLUSIVO DE ENCERRAMENTO
+        </div>
+        <div class="grid-2">
+          <div class="form-group">
+            <label for="creator_pin">Crie seu PIN de Segurança (4 a 6 dígitos) <span class="required">*</span></label>
+            <div style="display: flex; gap: 0.5rem;">
+              <input type="text" id="creator_pin" name="creator_pin" class="form-control" maxlength="6" pattern="[0-9]{4,6}" placeholder="Ex: 8391" required style="letter-spacing: 2px; font-weight: bold; font-size: 1.1rem;">
+              <button type="button" id="btnGenPin" class="btn-secondary" style="white-space: nowrap; padding: 0.6rem 0.9rem; font-size: 0.85rem;" title="Gerar PIN seguro aleatório">🎲 Gerar</button>
+            </div>
+            <small style="color: var(--text-muted); font-size: 0.78rem; display: block; margin-top: 0.3rem;">
+              Evite sequências (1234, 2345, 4321) e números repetidos (1111).
+            </small>
+            <div id="pinValidationMsg" style="display: none; color: #ff5252; font-size: 0.82rem; margin-top: 0.3rem; font-weight: 700;"></div>
+          </div>
+          <div class="pin-banner">
+            <span class="pin-icon">🛡️</span>
+            <div class="pin-text">
+              <strong>Apenas você pode encerrar:</strong> Guarde este PIN! Ele é a sua chave exclusiva para registrar check-ins e finalizar o protocolo com segurança.
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SUBMIT -->
+      <div class="submit-container">
+        <button type="submit" class="btn-primary-insano" id="submitBtn">
+          <img src="/images/caveirasembg.png" alt="Caveira" class="skull-btn-icon">
+          <span>GERAR PROTOCOLO & FICHA DE VIAGEM</span> ➔
+        </button>
+      </div>
+
+    </form>
+  </main>
+
+  <!-- MODAL SUCESSO & WHATSAPP -->
+  <div class="modal-overlay" id="successModal">
+    <div class="modal-container">
+      <div class="modal-header">
+        <div class="modal-title">
+          <img src="/images/caveirasembg.png" alt="Caveira" class="skull-btn-icon" style="height: 22px;">
+          <span><span class="gp-blue">GP</span><span class="issi-orange">ISSI</span> &bull; INSANO NA ESTRADA</span>
+        </div>
+        <button class="modal-close" id="closeModalBtn">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="color: var(--issi-orange-bright); font-weight: 700; margin-bottom: 0.75rem; font-family: var(--font-sub); font-size: 1.1rem;">
+          ✓ ROTA REGISTRADA COM SUCESSO NO SISTEMA!
+        </p>
+        <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1rem;">
+          Envie a ficha abaixo para os grupos de WhatsApp do MC e para seus familiares acompanharem seu deslocamento e rota em tempo real:
+        </p>
+
+        <div class="ficha-preview-box" id="fichaPreview">Carregando ficha...</div>
+
+        <div class="modal-actions">
+          <a href="#" id="btnShareWhatsapp" target="_blank" class="btn-whatsapp">
+            <span>📱 ENVIAR FICHA PARA O WHATSAPP COM LINK EM TEMPO REAL</span>
+          </a>
+          <button type="button" class="btn-copy" id="btnCopyFicha">
+            <span>📋 Copiar Ficha Formatada</span>
+          </button>
+          <a href="#" id="btnOpenTracker" class="btn-tracker-open">
+            <span>🗺️ Acompanhar Rota no Mapa Agora</span>
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- FOOTER -->
+  <footer class="footer">
+    <p class="footer-text">
+      <span class="gp-blue">GP</span><span class="issi-orange">ISSI</span> - <strong>INSANOS MC</strong> &bull; Protocolo Oficial de Rota &bull; <strong>Ninguém fica para trás!</strong>
+    </p>
+  </footer>
+
+  <script src="/js/app.js"></script>
+</body>
+</html>

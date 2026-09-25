@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
+  <title>GPISSI | Rastreamento em Tempo Real (OpenFreeMap) | INSANOS MC</title>
+  <meta name="description" content="GPISSI - Acompanhamento de rota e status em tempo real do integrante do Insanos MC com OpenFreeMap">
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="icon" type="image/png" href="/images/caveirasembg.png">
+  
+  <!-- MapLibre GL JS for OpenFreeMap -->
+  <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
+</head>
+<body>
+
+  <!-- NAVBAR -->
+  <header class="navbar">
+    <div class="nav-container">
+      <a href="/" class="nav-brand">
+        <div class="brand-logo-container">
+          <img src="/images/logosembg.png" alt="Logo Insanos MC" class="brand-logo-img">
+        </div>
+        <div class="brand-text">
+          <span class="brand-title"><span class="gp-blue">GP</span><span class="issi-orange">ISSI</span></span>
+          <span class="brand-subtitle">Insano na Estrada &bull; Rastreamento</span>
+        </div>
+      </a>
+      <nav class="nav-links">
+        <a href="/" class="nav-btn">📊 Dashboard</a>
+        <a href="/novo" class="nav-btn">📝 Novo Protocolo</a>
+        <a href="/radar" class="nav-btn">📡 Radar</a>
+      </nav>
+    </div>
+  </header>
+
+  <!-- MAIN TRACKER CONTAINER -->
+  <main class="full-width-wrapper">
+
+    <!-- TRACKER HEADER STATUS -->
+    <div class="tracker-header-card">
+      <div class="tracker-title-box">
+        <h1 id="heroTripTitle">🏍️ INSANO NA ESTRADA - <span class="gp-blue">GP</span><span class="issi-orange">ISSI</span></h1>
+        <div style="display: flex; gap: 0.6rem; align-items: center; margin-top: 0.35rem; flex-wrap: wrap;">
+          <span class="tracker-id-badge" id="tripIdBadge">ID: Carregando...</span>
+          <span style="color: var(--text-muted); font-size: 0.85rem;" id="tripTimestamp">Criado em: --</span>
+          <span style="color: var(--issi-orange); font-size: 0.8rem; background: rgba(255,102,0,0.1); padding: 0.15rem 0.5rem; border-radius: 4px;">⏳ Expira em até 72h</span>
+          <span id="signalStatusBadge" style="color: #00e676; font-size: 0.8rem; background: rgba(0,230,118,0.1); padding: 0.15rem 0.5rem; border-radius: 4px; display: inline-flex; align-items: center; gap: 4px;">
+            📶 Sinal: Conectado
+          </span>
+        </div>
+      </div>
+      <div id="tripStatusContainer">
+        <div class="status-badge open">
+          <span class="status-dot"></span>
+          <span>Carregando Status...</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- TRACKER GRID LAYOUT: MAP + SIDEBAR -->
+    <div class="tracker-layout">
+
+      <!-- LEFT: INTERACTIVE MAP & ROUTE TELEMETRY (OPENFREEMAP) -->
+      <div class="map-container-box">
+        <div class="map-toolbar">
+          <div class="route-stats-bar">
+            <div class="route-stat-item">
+              <span>🛣️ Rota:</span>
+              <strong id="statRouteName">-- ➔ --</strong>
+            </div>
+            <div class="route-stat-item">
+              <span>📏 Distância:</span>
+              <strong id="statDistance">Calculando...</strong>
+            </div>
+            <div class="route-stat-item">
+              <span>⏱️ Tempo Estimado:</span>
+              <strong id="statDuration">Calculando...</strong>
+            </div>
+          </div>
+          <div style="display: flex; gap: 0.5rem;">
+            <button class="nav-btn" id="btnFitMap" style="padding: 0.3rem 0.75rem; font-size: 0.85rem;">
+              ⛶ Ajustar Rota
+            </button>
+          </div>
+        </div>
+
+        <!-- OPENFREEMAP CONTAINER -->
+        <div id="map"></div>
+
+        <!-- QUICK NAV APPS (GOOGLE, WAZE, APPLE MAPS) -->
+        <div class="map-nav-apps-bar">
+          <div class="map-nav-title">
+            📍 Abrir Ponto Exato nos Aplicativos:
+          </div>
+          <div class="map-nav-buttons">
+            <a href="#" id="btnOpenGoogleMaps" target="_blank" class="btn-nav-app btn-nav-google">
+              <span>🌐 Google Maps</span>
+            </a>
+            <a href="#" id="btnOpenWaze" target="_blank" class="btn-nav-app btn-nav-waze">
+              <span>🚙 Waze</span>
+            </a>
+            <a href="#" id="btnOpenAppleMaps" target="_blank" class="btn-nav-app btn-nav-apple">
+              <span>🗺️ Apple Mapas</span>
+            </a>
+          </div>
+        </div>
+
+        <!-- RECENT CHECKPOINTS & 5-MIN TELEMETRY BAR -->
+        <div style="background: var(--bg-secondary); padding: 0.85rem 1.25rem; border-top: 1px solid var(--border-subtle); font-size: 0.88rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+            <div>
+              <span style="font-weight: 700; color: #fff; font-family: var(--font-sub);">📍 PONTO NO TRAJETO DA ROTA:</span>
+              <span id="lastCheckinDesc" style="color: var(--issi-orange-bright); margin-left: 0.4rem; font-weight: 600;">
+                Aguardando localização inicial...
+              </span>
+            </div>
+            <div style="color: var(--text-muted); font-size: 0.82rem;" id="lastCheckinTime">--</div>
+          </div>
+          
+          <div id="offlineNoticeBanner" style="display: none; margin-top: 0.5rem; background: rgba(255, 170, 0, 0.12); border: 1px solid rgba(255, 170, 0, 0.4); padding: 0.4rem 0.75rem; border-radius: 4px; color: #ffaa00; font-size: 0.82rem;">
+            ⚠️ <strong>Aviso de Sinal:</strong> Dispositivo sem sinal de celular. O último registro de localização permanece salvo e mantido no mapa com segurança.
+          </div>
+        </div>
+      </div>
+
+      <!-- RIGHT: PROTOCOL DETAILS & CREATOR ACTIONS -->
+      <div class="details-sidebar">
+
+        <!-- CREATOR 5-MIN TRACKING & CONTROL PANEL -->
+        <div class="creator-panel" id="creatorPanel">
+          <div class="creator-panel-header">
+            <span>🛡️</span> PAINEL DO PILOTO (AUTOR)
+          </div>
+          
+          <!-- 5-MIN REAL-TIME TRACKING HUD -->
+          <div id="creatorGpsStatusBox" style="background: rgba(0,0,0,0.4); border: 1px solid var(--border-subtle); border-radius: 6px; padding: 0.75rem; margin-bottom: 0.85rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25rem;">
+              <span style="font-size: 0.82rem; font-weight: 700; color: #00e676;">🟢 RASTREAMENTO TEMPO REAL (5 MIN):</span>
+              <span id="autoGpsCountdown" style="font-size: 0.82rem; color: #fff; font-family: monospace;">05:00</span>
+            </div>
+            <p style="font-size: 0.78rem; color: var(--text-muted); margin: 0;">
+              O ponto é transmitido a cada 5 minutos marcando o trajeto. Caso o sinal de celular caia, o último ponto é mantido.
+            </p>
+          </div>
+
+          <p class="creator-desc" id="creatorAuthMessage" style="margin-bottom: 0.75rem;">
+            Apenas quem cadastrou este protocolo tem autorização para encerrar a viagem ou transmitir novos check-ins.
+          </p>
+
+          <div class="creator-buttons" id="creatorActiveActions">
+            <button class="btn-gps-checkin" id="btnTransmitGps">
+              <span>📡 Transmitir Ponto no Trajeto Agora</span>
+            </button>
+            <button class="btn-close-trip" id="btnCloseTrip">
+              <span>🏁 Encerrar Viagem / Confirmar Chegada</span>
+            </button>
+          </div>
+
+          <div id="creatorAuthPrompt" style="display: none; margin-top: 0.5rem;">
+            <p style="font-size: 0.82rem; color: #cbd5e1; margin-bottom: 0.4rem;">
+              Você é o autor em outro dispositivo? Digite o PIN de segurança para se autenticar:
+            </p>
+            <div style="display: flex; gap: 0.4rem;">
+              <input type="password" id="inputPinAuth" placeholder="PIN" maxlength="6" class="form-control" style="width: 100px; padding: 0.4rem;">
+              <button class="btn-primary-insano" id="btnAuthPin" style="padding: 0.4rem 0.8rem; font-size: 0.85rem;">Autenticar</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- TRIP CLOSED NOTICE -->
+        <div class="info-card" id="closedNoticeCard" style="display: none; border-color: var(--accent-green); background: rgba(0, 230, 118, 0.05);">
+          <div class="info-title" style="color: var(--accent-green);">
+            <span>✓</span> PROTOCOLO CONCLUÍDO
+          </div>
+          <p style="font-size: 0.88rem; color: #d1fae5; margin-bottom: 0.4rem;" id="closedNoticeText">
+            Viagem encerrada com sucesso pelo autor do protocolo! Chegada ao destino confirmada com segurança.
+          </p>
+          <div style="font-size: 0.8rem; color: var(--text-muted);" id="closedTimestamp">--</div>
+        </div>
+
+        <!-- INTEGRANTE INFO -->
+        <div class="info-card">
+          <div class="info-title">
+            <span>👤</span> INTEGRANTE & CONDUÇÃO
+          </div>
+          <div class="info-list">
+            <div class="info-row">
+              <span class="info-label">Nome do Colete:</span>
+              <span class="info-value" id="valNomeColete">--</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">Função/Grau:</span>
+              <span class="info-value" id="valGrau" style="color: var(--issi-orange-bright);">--</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">Telefone / WhatsApp:</span>
+              <span class="info-value" id="valTelefone">--</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">Veículo:</span>
+              <span class="info-value" id="valTransporte">--</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">Detalhe / Placa:</span>
+              <span class="info-value" id="valTransporteDetalhe">--</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">Acompanhante:</span>
+              <span class="info-value" id="valAcompanhante">--</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- ROTA & CRONOGRAMA -->
+        <div class="info-card">
+          <div class="info-title">
+            <span>📍</span> ROTA & CRONOGRAMA
+          </div>
+          <div class="info-list">
+            <div class="info-row">
+              <span class="info-label">Origem:</span>
+              <span class="info-value" id="valOrigem">--</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">Destino:</span>
+              <span class="info-value" id="valDestino">--</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">Saída:</span>
+              <span class="info-value" id="valSaida">--</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">Previsão Chegada:</span>
+              <span class="info-value" id="valPrevisao">--</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">Retorno Previsto:</span>
+              <span class="info-value" id="valRetorno">--</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- CONTATO DE EMERGÊNCIA -->
+        <div class="info-card">
+          <div class="info-title">
+            <span>🆘</span> CONTATO DE EMERGÊNCIA
+          </div>
+          <div class="emergency-highlight">
+            <div class="info-row">
+              <span class="info-label">Contato:</span>
+              <span class="info-value" id="valEmergenciaContato" style="color: #fff;">--</span>
+            </div>
+            <div class="info-row" style="margin-top: 0.3rem;">
+              <span class="info-label">Telefone:</span>
+              <span class="info-value" id="valEmergenciaTel" style="color: var(--issi-orange);">--</span>
+            </div>
+            <a href="#" id="btnCallEmergencia" class="btn-emergency-call">
+              <span>📞 Ligar para Emergência</span>
+            </a>
+          </div>
+        </div>
+
+        <!-- OBSERVAÇÕES E RESUMO -->
+        <div class="info-card">
+          <div class="info-title">
+            <span>📝</span> OBSERVAÇÕES & RESUMO
+          </div>
+          <div style="font-size: 0.85rem; color: #cbd5e1; margin-bottom: 0.75rem;">
+            <strong style="color: var(--text-muted); display: block; margin-bottom: 0.2rem;">Notas de Estrada:</strong>
+            <p id="valNotas">Nenhuma anotação.</p>
+          </div>
+          <div style="font-size: 0.85rem; color: #cbd5e1;">
+            <strong style="color: var(--text-muted); display: block; margin-bottom: 0.2rem;">Resumo Pré-Viagem:</strong>
+            <p id="valResumo">Sem resumo.</p>
+          </div>
+        </div>
+
+        <!-- SHARE ON WHATSAPP BUTTON -->
+        <a href="#" id="btnShareTrackerWa" target="_blank" class="btn-whatsapp" style="padding: 0.8rem; font-size: 0.95rem;">
+          <span>📱 Compartilhar no WhatsApp</span>
+        </a>
+
+      </div>
+    </div>
+  </main>
+
+  <!-- MODAL DE ENCERRAMENTO -->
+  <div class="modal-overlay" id="closeTripModal">
+    <div class="modal-container" style="max-width: 480px;">
+      <div class="modal-header">
+        <div class="modal-title" style="color: var(--issi-orange-bright);">
+          <span>🏁</span> Confirmar Encerramento de Viagem
+        </div>
+        <button class="modal-close" id="btnCancelCloseModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size: 0.9rem; color: #e2e8f0; margin-bottom: 1rem;">
+          Você está prestes a encerrar este protocolo de viagem no GPISSI. O status mudará para <strong>CONCLUÍDA</strong> e o mapa indicará que você chegou com segurança.
+        </p>
+
+        <div class="form-group" style="margin-bottom: 1rem;">
+          <label for="closeMotivoInput">Mensagem de Chegada / Relato Final:</label>
+          <input type="text" id="closeMotivoInput" class="form-control" value="Chegada confirmada com segurança ao destino!">
+        </div>
+
+        <div class="form-group" id="pinConfirmBox" style="display: none; margin-bottom: 1rem;">
+          <label for="closePinInput">Digite seu PIN de Segurança:</label>
+          <input type="password" id="closePinInput" class="form-control" maxlength="6" placeholder="PIN de 4 dígitos">
+        </div>
+
+        <div style="display: flex; gap: 0.75rem; margin-top: 1rem;">
+          <button type="button" class="btn-close-trip" id="btnConfirmCloseTrip" style="flex: 1;">
+            Confirmar Encerramento 🏁
+          </button>
+          <button type="button" class="btn-copy" id="btnCancelCloseTrip" style="width: auto;">
+            Cancelar
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- FOOTER -->
+  <footer class="footer">
+    <p class="footer-text">
+      <span class="gp-blue">GP</span><span class="issi-orange">ISSI</span> - <strong>INSANOS MC</strong> &bull; Protocolo Oficial de Rota &bull; <strong>Ninguém fica para trás!</strong>
+    </p>
+  </footer>
+
+  <!-- MapLibre GL JS for OpenFreeMap -->
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <script src="/js/tracker.js"></script>
+</body>
+</html>
