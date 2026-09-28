@@ -41,6 +41,7 @@
         <a href="/" class="nav-btn">📊 Dashboard</a>
         <a href="/novo" class="nav-btn">📝 Novo Protocolo</a>
         <a href="/radar" class="nav-btn active">📡 Radar</a>
+        <a href="/conta" class="nav-btn">👤 Conta</a>
       </nav>
     </div>
   </header>
@@ -170,6 +171,10 @@
     async function fetchTrips(isSilent = false) {
       try {
         const res = await fetch('/api/viagens');
+        if (res.status === 401) {
+          window.location.href = '/conta';
+          return;
+        }
         if (!res.ok) throw new Error('Erro ao listar viagens');
         allTrips = await res.json();
         updateCounts();
@@ -259,7 +264,7 @@
             <div style="display: flex; gap: 5px; flex-wrap: wrap;">
               <a href="${googleLink}" target="_blank" style="background: #1a73e8; color: #fff; padding: 4px 8px; border-radius: 4px; font-size: 11px; text-decoration: none; font-weight: bold;">Google Maps</a>
               <a href="${wazeLink}" target="_blank" style="background: #33ccff; color: #000; padding: 4px 8px; border-radius: 4px; font-size: 11px; text-decoration: none; font-weight: bold;">Waze</a>
-              <a href="/tracker?id=${t.id}" style="background: #ff6600; color: #000; padding: 4px 8px; border-radius: 4px; font-size: 11px; text-decoration: none; font-weight: bold;">Ver Rota</a>
+              <a href="/tracker?id=${encodeURIComponent(t.id)}&share=${encodeURIComponent(t.share_token || '')}" style="background: #ff6600; color: #000; padding: 4px 8px; border-radius: 4px; font-size: 11px; text-decoration: none; font-weight: bold;">Ver Rota</a>
             </div>
           </div>
         `);
@@ -366,7 +371,7 @@
             </div>
 
             <div style="display: flex; flex-direction: column; gap: 0.4rem; margin-top: 0.85rem;">
-              <a href="/tracker?id=${t.id}" class="btn-tracker-open" style="padding: 0.6rem; font-size: 0.9rem;">
+              <a href="/tracker?id=${encodeURIComponent(t.id)}&share=${encodeURIComponent(t.share_token || '')}" class="btn-tracker-open" style="padding: 0.6rem; font-size: 0.9rem;">
                 🗺️ Acompanhar Rota (OpenFreeMap)
               </a>
               <div style="display: flex; gap: 0.4rem;">

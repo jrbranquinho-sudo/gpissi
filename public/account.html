@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GPISSI | Conta</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <meta name="theme-color" content="#ff6600">
+</head>
+<body>
+  <header class="navbar">
+    <div class="nav-container">
+      <a href="/" class="nav-brand">
+        <div class="brand-logo-container"><img src="/images/logosembg.png" alt="Logo Insanos MC" class="brand-logo-img"></div>
+        <div class="brand-text">
+          <span class="brand-title"><span class="gp-blue">GP</span><span class="issi-orange">ISSI</span></span>
+          <span class="brand-subtitle">Conta de integrante</span>
+        </div>
+      </a>
+      <nav class="nav-links"><a href="/" class="nav-btn">Dashboard</a><a href="/novo" class="nav-btn">Nova viagem</a><a href="/radar" class="nav-btn">Radar</a><a href="/conta" class="nav-btn active">👤 Conta</a></nav>
+    </div>
+  </header>
+
+  <main class="main-wrapper" style="max-width: 760px;">
+    <div class="protocol-hero">
+      <div class="hero-badge"><span class="gp-blue">GP</span><span class="issi-orange">ISSI</span> &bull; ACESSO SEGURO</div>
+      <h1 class="protocol-title">CONTA DO INTEGRANTE</h1>
+    </div>
+
+    <section id="accountPanel" class="form-section">
+      <div id="sessionView" hidden>
+        <div class="section-header">SESSÃO ATIVA</div>
+        <p id="sessionProfile"></p>
+        <div style="display:flex;gap:.75rem;flex-wrap:wrap;margin-top:1rem;">
+          <a href="/novo" class="btn-primary-insano">Abrir nova viagem</a>
+          <button type="button" id="logoutButton" class="btn-secondary">Sair da conta</button>
+        </div>
+        <div class="account-companions">
+          <div class="section-header">ACOMPANHANTES CADASTRADOS</div>
+          <p>Salve até quatro contatos para selecionar quando abrir uma viagem acompanhado.</p>
+          <form id="companionsForm">
+            <div id="accountCompanionsFields" class="account-companions-fields"></div>
+            <button type="submit" class="btn-primary-insano">Salvar acompanhantes</button>
+            <span id="companionsMessage" role="status" aria-live="polite"></span>
+          </form>
+        </div>
+        <div class="account-companions">
+          <div class="section-header">CONTATOS DE EMERGÊNCIA</div>
+          <p>Cadastre até três pessoas que poderão ser contatadas durante uma viagem.</p>
+          <form id="emergencyContactsForm">
+            <div id="emergencyContactsFields" class="account-companions-fields"></div>
+            <button type="submit" class="btn-primary-insano">Salvar contatos de emergência</button>
+            <span id="emergencyContactsMessage" role="status" aria-live="polite"></span>
+          </form>
+        </div>
+          <div class="section-header" style="margin-top:1.5rem;">MINHAS VIAGENS</div>
+          <div id="myTripsList" aria-live="polite">Carregando viagens...</div>
+      </div>
+
+      <div id="authView">
+        <div style="display:flex;gap:.5rem;margin-bottom:1.25rem;">
+          <button type="button" id="showLogin" class="nav-btn active">Entrar</button>
+          <button type="button" id="showRegister" class="nav-btn">Criar conta</button>
+        </div>
+
+        <form id="loginForm">
+          <div class="section-header">ENTRAR</div>
+          <div class="form-group"><label for="loginEmail">E-mail</label><input id="loginEmail" name="email" type="email" class="form-control" autocomplete="email" required></div>
+          <div class="form-group"><label for="loginPassword">Senha</label><input id="loginPassword" name="password" type="password" class="form-control" autocomplete="current-password" required></div>
+          <div class="security-challenge" id="loginChallengePanel" hidden>
+            <div class="security-challenge-title">🛡️ Verificação de Segurança</div>
+            <p>Digite a sequência exibida para confirmar seu acesso.</p>
+            <div class="security-challenge-image"><img id="loginChallengeImage" alt="Sequência de segurança"></div>
+            <input type="hidden" id="loginChallengeId" name="challenge_id">
+            <label for="loginChallengeCode">DIGITE A SEQUÊNCIA ACIMA:</label>
+            <input id="loginChallengeCode" name="challenge_code" type="text" inputmode="text" pattern="[A-Za-z]{6}" maxlength="6" class="form-control security-challenge-input" autocomplete="off">
+            <div class="security-challenge-actions">
+              <button type="button" id="cancelLoginChallenge" class="btn-secondary">Cancelar</button>
+              <button type="button" id="refreshLoginChallenge" class="btn-secondary" aria-label="Gerar outra sequência" title="Gerar outra sequência">↻</button>
+              <button type="submit" class="btn-primary-insano" id="loginSubmit">Confirmar acesso</button>
+            </div>
+          </div>
+          <button type="submit" class="btn-primary-insano" id="requestLoginChallenge">Continuar</button>
+        </form>
+
+        <form id="registerForm" hidden>
+          <div class="section-header">CADASTRO DO INTEGRANTE</div>
+          <div class="grid-2">
+            <div class="form-group"><label for="registerName">Nome completo</label><input id="registerName" name="nome" class="form-control" autocomplete="name" maxlength="100" required></div>
+            <div class="form-group"><label for="registerColete">Nome de colete</label><input id="registerColete" name="nome_colete" class="form-control" maxlength="80" required></div>
+            <div class="form-group"><label for="registerPhone">Celular</label><input id="registerPhone" name="telefone" type="tel" class="form-control phone-account-mask" autocomplete="tel" inputmode="numeric" placeholder="(64) 9 9999-9999" maxlength="18" required></div>
+            <div class="form-group"><label for="registerEmail">E-mail</label><input id="registerEmail" name="email" type="email" class="form-control" autocomplete="email" maxlength="254" required></div>
+            <div class="form-group"><label for="registerRole">Função/Grau</label><select id="registerRole" name="funcao_grau" class="form-control" required>
+              <option value="" disabled selected>Selecione sua Função/Grau...</option>
+              <option value="MUNDIAL - I">MUNDIAL - I</option>
+              <option value="SUPLENTE - II">SUPLENTE - II</option>
+              <option value="COMANDO BRASIL - III">COMANDO BRASIL - III</option>
+              <option value="COMANDO REGIONAL - IV">COMANDO REGIONAL - IV</option>
+              <option value="EXPANSÃO REGIONAL - V">EXPANSÃO REGIONAL - V</option>
+              <option value="DIRETOR REGIONAL - V">DIRETOR REGIONAL - V</option>
+              <option value="OPERACIONAL REGIONAL - V">OPERACIONAL REGIONAL - V</option>
+              <option value="SOCIAL REGIONAL - V">SOCIAL REGIONAL - V</option>
+              <option value="ADM REGIONAL - V">ADM REGIONAL - V</option>
+              <option value="COMUNICAÇÃO REGIONAL - V">COMUNICAÇÃO REGIONAL - V</option>
+              <option value="SARGENTO DE ARMAS - V">SARGENTO DE ARMAS - V</option>
+              <option value="DIRETOR DE DIVISÃO - VI">DIRETOR DE DIVISÃO - VI</option>
+              <option value="SUB-DIRETOR DE DIVISÃO - VI">SUB-DIRETOR DE DIVISÃO - VI</option>
+              <option value="SOCIAL DE DIVISÃO - VI">SOCIAL DE DIVISÃO - VI</option>
+              <option value="ADM DE DIVISÃO - VI">ADM DE DIVISÃO - VI</option>
+              <option value="SARGENTO DE ARMAS - VI">SARGENTO DE ARMAS - VI</option>
+              <option value="NÔMADE - VII">NÔMADE - VII</option>
+              <option value="FULL - VIII">FULL - VIII</option>
+              <option value="SARGENTO DE ARMAS - VIII">SARGENTO DE ARMAS - VIII</option>
+              <option value="MEIO-COLETE - IX">MEIO-COLETE - IX</option>
+              <option value="SARGENTO DE ARMAS - IX">SARGENTO DE ARMAS - IX</option>
+              <option value="CAMISETA - X">CAMISETA - X</option>
+              <option value="PP - X">PP - X</option>
+              <option value="SARGENTO DE ARMAS - X">SARGENTO DE ARMAS - X</option>
+            </select></div>
+            <div class="form-group" style="grid-column:1/-1"><label for="registerPassword">Senha (mínimo de 12 caracteres)</label><input id="registerPassword" name="password" type="password" class="form-control" minlength="12" autocomplete="new-password" required></div>
+          </div>
+          <div class="security-challenge" id="registerChallengePanel" hidden>
+            <div class="security-challenge-title">🛡️ Verificação de Segurança</div>
+            <p>Digite a sequência exibida para criar sua conta.</p>
+            <div class="security-challenge-image"><img id="registerChallengeImage" alt="Sequência de segurança"></div>
+            <input type="hidden" id="registerChallengeId" name="challenge_id">
+            <label for="registerChallengeCode">DIGITE A SEQUÊNCIA ACIMA:</label>
+            <input id="registerChallengeCode" name="challenge_code" type="text" inputmode="text" pattern="[A-Za-z]{6}" maxlength="6" class="form-control security-challenge-input" autocomplete="off">
+            <div class="security-challenge-actions">
+              <button type="button" id="cancelRegisterChallenge" class="btn-secondary">Cancelar</button>
+              <button type="button" id="refreshRegisterChallenge" class="btn-secondary" aria-label="Gerar outra sequência" title="Gerar outra sequência">↻</button>
+              <button type="submit" class="btn-primary-insano">Confirmar cadastro</button>
+            </div>
+          </div>
+        </form>
+      </div>
+      <p id="accountMessage" role="status" aria-live="polite" style="margin-top:1rem;"></p>
+    </section>
+  </main>
+  <script src="/js/account.js"></script>
+</body>
+</html>

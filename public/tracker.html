@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
-  <title>GPISSI | Rastreamento em Tempo Real (OpenFreeMap) | INSANOS MC</title>
+  <title>GPISSI | Rastreamento em Tempo Real | INSANOS MC</title>
   <meta name="description" content="GPISSI - Acompanhamento de rota e status em tempo real do integrante do Insanos MC com OpenFreeMap">
   <link rel="stylesheet" href="/css/style.css">
   
@@ -41,6 +41,7 @@
         <a href="/" class="nav-btn">📊 Dashboard</a>
         <a href="/novo" class="nav-btn">📝 Novo Protocolo</a>
         <a href="/radar" class="nav-btn">📡 Radar</a>
+        <a href="/conta" class="nav-btn">👤 Conta</a>
       </nav>
     </div>
   </header>
@@ -132,6 +133,10 @@
           <div id="offlineNoticeBanner" style="display: none; margin-top: 0.5rem; background: rgba(255, 170, 0, 0.12); border: 1px solid rgba(255, 170, 0, 0.4); padding: 0.4rem 0.75rem; border-radius: 4px; color: #ffaa00; font-size: 0.82rem;">
             ⚠️ <strong>Aviso de Sinal:</strong> Dispositivo sem sinal de celular. O último registro de localização permanece salvo e mantido no mapa com segurança.
           </div>
+          <div class="location-history">
+            <strong>HISTÓRICO DE PASSAGEM</strong>
+            <ol id="locationHistoryList" aria-live="polite"><li>Aguardando registros GPS.</li></ol>
+          </div>
         </div>
       </div>
 
@@ -151,7 +156,7 @@
               <span id="autoGpsCountdown" style="font-size: 0.82rem; color: #fff; font-family: monospace;">05:00</span>
             </div>
             <p style="font-size: 0.78rem; color: var(--text-muted); margin: 0;">
-              O ponto é transmitido a cada 5 minutos marcando o trajeto. Caso o sinal de celular caia, o último ponto é mantido.
+              Posição enviada ao abrir o rastreador, a cada 5 minutos e quando a conexão voltar. Permita o acesso à localização e mantenha esta tela aberta durante a viagem.
             </p>
           </div>
 
@@ -344,6 +349,7 @@
 
   <!-- MapLibre GL JS for OpenFreeMap -->
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <script src="/js/gps-utils.js"></script>
   <script src="/js/tracker.js"></script>
 </body>
 </html>

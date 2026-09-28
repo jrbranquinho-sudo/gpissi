@@ -5,12 +5,13 @@ let currentVehicleType = 'MOTO';
 
 document.addEventListener('DOMContentLoaded', () => {
   setupDates();
+  setupAccountProfile();
+  setupEmergencyContactSelect();
   setupPhoneMasks();
   setupPlacaMask();
   setupIbgeAutocomplete();
   setupVehicleCatalog();
   setupCompanionToggle();
-  setupPinValidation();
   setupFormSubmission();
 });
 
@@ -175,14 +176,16 @@ async function triggerRouteCalculation() {
         origem,
         destino,
         data_saida: dataSaida,
-        hora_saida: horaSaida
+        hora_saida: horaSaida,
+        transporte_tipo: document.querySelector('input[name="transporte_tipo"]:checked')?.value || 'MOTO'
       })
     });
 
     if (res.ok) {
       const data = await res.json();
       if (data.previsao_chegada_hora) {
-        previsaoInput.value = `${data.previsao_chegada_hora} (${data.distance_km} km | ~${data.duration_text})`;
+        const stopText = data.stop_minutes ? ` | parada ${data.stop_minutes} min` : '';
+        previsaoInput.value = `${data.previsao_chegada_hora} (${data.distance_km} km | ~${data.duration_text} | média ${data.average_speed_kmh} km/h${stopText})`;
       }
     }
   } catch (err) {
@@ -268,6 +271,7 @@ async function setupVehicleCatalog() {
       }
 
       currentVehicleType = radio.value;
+      triggerRouteCalculation();
 
       if (radio.value === 'ÔNIBUS') {
         motoCarroBox.style.display = 'none';
@@ -285,11 +289,105 @@ async function setupVehicleCatalog() {
 function setupCompanionToggle() {
   const companionRadios = document.querySelectorAll('input[name="vai_acompanhado"]');
   const acompanhanteBox = document.getElementById('acompanhante_box');
+  const membersList = document.getElementById('acompanhantes_lista');
+  let membersLoaded = false;
   companionRadios.forEach(r => {
     r.addEventListener('change', () => {
       acompanhanteBox.style.display = r.value === 'Sim' ? 'block' : 'none';
+      if (r.value === 'Sim' && r.checked && !membersLoaded) {
+        membersLoaded = true;
+        fetch('/api/members').then(async response => {
+          const members = await response.json();
+          if (!response.ok) throw new Error(members.error || 'Não foi possível listar integrantes.');
+          membersList.replaceChildren();
+          if (members.length === 0) {
+            document.getElementById('acompanhantes_contagem').textContent = 'Nenhum acompanhante cadastrado.';
+            return;
+          }
+          members.forEach(member => {
+            const label = document.createElement('label');
+            label.className = 'companion-member';
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.value = member.id;
+            checkbox.name = 'companion_option';
+            const name = document.createElement('span');
+            if (member.kind === 'contact') {
+              name.textContent = `${member.nome} · ${member.telefone}`;
+            } else {
+              const role = [member.grau, member.funcao].filter(Boolean).join(' - ');
+              name.textContent = `${member.nome_colete}${role ? ` (${role})` : ''}`;
+            }
+            label.append(checkbox, name);
+            membersList.append(label);
+          });
+          membersList.addEventListener('change', event => {
+            const selected = membersList.querySelectorAll('input:checked');
+            if (selected.length > 4 && event.target.matches('input')) {
+              event.target.checked = false;
+              alert('Você pode selecionar no máximo quatro acompanhantes.');
+            }
+            document.getElementById('acompanhantes_contagem').textContent = `${membersList.querySelectorAll('input:checked').length} de 4 selecionados`;
+          });
+        }).catch(error => {
+          membersLoaded = false;
+          membersList.textContent = error.message;
+        });
+      }
     });
   });
+}
+
+async function setupEmergencyContactSelect() {
+  const select = document.getElementById('emergency_contact_id');
+  const hint = document.getElementById('emergencyContactHint');
+  try {
+    const response = await fetch('/api/account/emergency-contacts');
+    const contacts = await response.json();
+    select.replaceChildren(new Option('Selecione um contato de emergência...', ''));
+    if (!response.ok) throw new Error(contacts.error || 'Entre na conta para carregar os contatos.');
+    contacts.forEach(contact => {
+      select.add(new Option(`${contact.nome} · ${contact.telefone}`, contact.id));
+    });
+    if (contacts.length === 0) {
+      hint.textContent = 'Cadastre contatos na sua conta antes de criar uma viagem.';
+      select.add(new Option('Cadastrar contatos de emergência', ''));
+      return;
+    }
+    hint.textContent = 'Gerencie até três contatos em Conta do Integrante.';
+  } catch (error) {
+    select.replaceChildren(new Option('Não foi possível carregar os contatos', ''));
+    hint.textContent = error.message;
+  }
+}
+
+async function setupAccountProfile() {
+  try {
+    const response = await fetch('/api/auth/me');
+    if (!response.ok) {
+      window.location.replace('/conta');
+      return;
+    }
+    const { user } = await response.json();
+    const profile = user.profile;
+    document.getElementById('nome_colete').value = profile.nome_colete;
+    document.getElementById('nome_colete').readOnly = true;
+    document.getElementById('telefone').value = profile.telefone;
+    document.getElementById('telefone').readOnly = true;
+
+    const grau = document.getElementById('grau');
+    const value = profile.funcao_grau || [profile.grau, profile.funcao].filter(Boolean).join(' - ');
+    if (![...grau.options].some(option => option.value === value)) {
+      const option = document.createElement('option');
+      option.value = value;
+      option.textContent = value;
+      grau.append(option);
+    }
+    grau.value = value;
+    grau.disabled = true;
+  } catch (_) {
+    window.location.replace('/conta');
+  }
 }
 
 // 7.1. PIN VALIDATION & GENERATOR
@@ -391,18 +489,6 @@ function setupFormSubmission() {
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
 
-    const pinInput = document.getElementById('creator_pin');
-    const pinVal = pinInput ? pinInput.value.trim() : '';
-
-    if (isSequentialOrTrivialPin(pinVal)) {
-      alert('⚠️ PIN de Segurança Inválido!\n\nPor favor, evite números sequenciais crescentes ou decrescentes (como 1234, 2345, 4321, 5432) e números repetidos (1111).\n\nClique no botão "🎲 Gerar" para obter um PIN seguro automaticamente.');
-      if (pinInput) {
-        pinInput.focus();
-        pinInput.select();
-      }
-      return;
-    }
-
     const submitBtn = document.getElementById('submitBtn');
     submitBtn.disabled = true;
     submitBtn.innerHTML = '<span>⚡ PROCESSANDO ROTA NO GPISSI...</span>';
@@ -412,6 +498,7 @@ function setupFormSubmission() {
     formData.forEach((val, key) => {
       payload[key] = val;
     });
+    payload.companion_ids = [...document.querySelectorAll('#acompanhantes_lista input:checked')].map(input => input.value);
 
     try {
       const response = await fetch('/api/viagens', {
@@ -432,12 +519,13 @@ function setupFormSubmission() {
       const savedAuth = {
         id: result.id,
         admin_token: result.admin_token,
+        share_token: result.share_token,
         creator_pin: result.creator_pin
       };
       localStorage.setItem(`insanos_trip_${result.id}`, JSON.stringify(savedAuth));
       localStorage.setItem('insanos_last_trip', JSON.stringify(savedAuth));
 
-      buildAndShowModal(result.viagem, result.admin_token);
+      buildAndShowModal(result.viagem);
 
     } catch (err) {
       alert('Falha ao registrar protocolo no GPISSI: ' + err.message);
@@ -457,10 +545,9 @@ function formatDateBR(dateString) {
   return dateString;
 }
 
-function buildAndShowModal(viagem, adminToken) {
+function buildAndShowModal(viagem) {
   const origin = window.location.origin;
-  const publicTrackerUrl = `${origin}/tracker?id=${viagem.id}`;
-  const adminTrackerUrl = `${origin}/tracker?id=${viagem.id}&token=${adminToken}`;
+  const publicTrackerUrl = `${origin}/tracker?id=${viagem.id}&share=${encodeURIComponent(viagem.share_token)}`;
 
   const tTipo = viagem.transporte_tipo || 'MOTO';
   const vDetalhe = viagem.transporte_detalhe || (viagem.transporte_placa ? `Placa: ${viagem.transporte_placa}` : 'N/A');
@@ -529,7 +616,7 @@ ${publicTrackerUrl}
   };
 
   const openTrackerBtn = document.getElementById('btnOpenTracker');
-  openTrackerBtn.href = adminTrackerUrl;
+  openTrackerBtn.href = publicTrackerUrl;
 
   const modal = document.getElementById('successModal');
   modal.classList.add('active');

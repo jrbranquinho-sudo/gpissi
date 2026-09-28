@@ -5,9 +5,14 @@ const path = require('path');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const crypto = require('crypto');
+const storage = require('./storage');
+const auth = require('./auth');
+const { estimateDurationSeconds } = require('./route-estimate');
+const gpsUtils = require('./public/js/gps-utils');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const SESSION_SECRET = process.env.SESSION_SECRET || '';
 
 // Trust proxy for rate limiters behind Vercel / Cloudflare / Nginx
 app.set('trust proxy', 1);
@@ -15,33 +20,8 @@ app.set('trust proxy', 1);
 // Disable X-Powered-By
 app.disable('x-powered-by');
 
-// Vercel Serverless & Local Storage Compatibility
-const isVercel = Boolean(process.env.VERCEL || process.env.NOW_REGION);
-const DATA_DIR = isVercel ? path.join('/tmp', 'gpissi_data') : path.join(__dirname, 'data');
-const DB_FILE = path.join(DATA_DIR, 'viagens.json');
 const CIDADES_FILE = path.join(__dirname, 'data', 'cidades_ibge.json');
 const VEICULOS_FILE = path.join(__dirname, 'data', 'veiculos_dados.json');
-
-// Ensure directories safely
-try {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-  }
-  if (!fs.existsSync(DB_FILE)) {
-    const initialDb = path.join(__dirname, 'data', 'viagens.json');
-    if (fs.existsSync(initialDb)) {
-      try {
-        fs.copyFileSync(initialDb, DB_FILE);
-      } catch (_) {
-        fs.writeFileSync(DB_FILE, JSON.stringify([], null, 2), 'utf8');
-      }
-    } else {
-      fs.writeFileSync(DB_FILE, JSON.stringify([], null, 2), 'utf8');
-    }
-  }
-} catch (err) {
-  console.warn('Armazenamento inicializado com aviso:', err.message);
-}
 
 // 1. HELMET SECURITY HEADERS WITH STRICT CSP
 app.use(helmet({
@@ -49,6 +29,7 @@ app.use(helmet({
     directives: {
       defaultSrc: ["'self'"],
       scriptSrc: ["'self'", "'unsafe-inline'", "https://unpkg.com"],
+      workerSrc: ["'self'", "blob:"],
       styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com", "https://unpkg.com"],
       fontSrc: ["'self'", "https://fonts.gstatic.com", "data:"],
       imgSrc: ["'self'", "data:", "blob:", "https:", "http:"],
@@ -77,6 +58,16 @@ app.use(cors({
 // 3. BODY SIZE LIMIT (Prevents JSON bombs & memory exhaustion DOS)
 app.use(express.json({ limit: '100kb' }));
 app.use(express.urlencoded({ extended: false, limit: '100kb' }));
+
+app.use('/api', async (req, res, next) => {
+  try {
+    await storage.initializeStorage();
+    next();
+  } catch (error) {
+    console.error('Falha ao conectar ao banco de dados:', error.message);
+    res.status(503).json({ error: 'Banco de dados indisponível. Confira a configuração do Turso.' });
+  }
+});
 
 // 4. RATE LIMITERS FOR DEFENSE AGAINST DDOS & BRUTE-FORCE
 const globalLimiter = rateLimit({
@@ -112,6 +103,14 @@ const checkinLimiter = rateLimit({
   message: { error: 'Limite de envio de check-ins atingido temporariamente. Aguarde.' }
 });
 
+const accountLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Muitas tentativas de acesso. Aguarde alguns minutos.' }
+});
+
 // XSS SANITIZATION HELPER
 function sanitizeString(str, maxLen = 200) {
   if (typeof str !== 'string') return '';
@@ -125,6 +124,13 @@ function sanitizeString(str, maxLen = 200) {
 
 function isValidTripId(id) {
   return typeof id === 'string' && /^[A-Za-z0-9_-]{4,35}$/.test(id);
+}
+
+function securelyMatches(value, expected) {
+  if (typeof value !== 'string' || typeof expected !== 'string') return false;
+  const valueBuffer = Buffer.from(value);
+  const expectedBuffer = Buffer.from(expected);
+  return valueBuffer.length === expectedBuffer.length && crypto.timingSafeEqual(valueBuffer, expectedBuffer);
 }
 
 app.use(express.static(path.join(__dirname, 'public')));
@@ -189,7 +195,7 @@ function isSequentialOrTrivialPin(pinStr) {
 function generateSecurePin() {
   let pin = '';
   do {
-    pin = Math.floor(1000 + Math.random() * 9000).toString();
+    pin = String(crypto.randomInt(1000, 10000));
   } while (isSequentialOrTrivialPin(pin));
   return pin;
 }
@@ -200,55 +206,15 @@ function generateSecurePin() {
 const MAX_ACTIVE_LIFETIME_MS = 72 * 60 * 60 * 1000; // 72 horas
 const MAX_CLOSED_LIFETIME_MS = 2 * 60 * 60 * 1000;  // 2 horas
 
-function cleanupExpiredViagens(viagens) {
+// Periodic retention cleanup for persistent trips
+const cleanupTimer = setInterval(() => {
   const now = Date.now();
-  const valid = viagens.filter(v => {
-    // Se a viagem já foi encerrada, mantém apenas por 2 horas após closed_at
-    if (v.status === 'CONCLUÍDA' && v.closed_at) {
-      const closedTime = new Date(v.closed_at).getTime();
-      return (now - closedTime) <= MAX_CLOSED_LIFETIME_MS;
-    }
-    // Viagens ativas permanecem até 72 horas
-    const createdTime = new Date(v.created_at || v.data_saida).getTime();
-    if (isNaN(createdTime)) return true;
-    return (now - createdTime) <= MAX_ACTIVE_LIFETIME_MS;
-  });
-
-  if (valid.length !== viagens.length) {
-    const removedCount = viagens.length - valid.length;
-    console.log(`🧹 GPISSI: Limpeza automática executada. ${removedCount} ficha(s) expirada(s) ou encerrada(s) há mais de 2h removida(s).`);
-    saveViagens(valid);
-  }
-  return valid;
-}
-
-// Read DB with automatic purge
-function readViagens() {
-  try {
-    const raw = fs.readFileSync(DB_FILE, 'utf8');
-    const viagens = JSON.parse(raw);
-    return cleanupExpiredViagens(viagens);
-  } catch (err) {
-    console.error('Erro ao ler banco de dados:', err);
-    return [];
-  }
-}
-
-// Write DB
-function saveViagens(data) {
-  try {
-    fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), 'utf8');
-    return true;
-  } catch (err) {
-    console.error('Erro ao salvar no banco de dados:', err);
-    return false;
-  }
-}
-
-// Periodic cleanup every 10 minutes
-setInterval(() => {
-  readViagens();
+  storage.deleteExpiredTrips(
+    new Date(now - MAX_ACTIVE_LIFETIME_MS).toISOString(),
+    new Date(now - MAX_CLOSED_LIFETIME_MS).toISOString()
+  ).catch(error => console.warn('Limpeza de viagens falhou:', error.message));
 }, 10 * 60 * 1000);
+cleanupTimer.unref();
 
 // Coordinates database for geocoding
 const BRAZIL_LOCATIONS = {
@@ -326,8 +292,342 @@ async function geocodeLocation(query) {
     console.warn('Geocoding fallback:', query, e.message);
   }
 
-  return { lat: -23.5505, lon: -46.6333, display_name: query };
+  return null;
 }
+
+function hasLegacyFallbackCoordinates(query, location) {
+  const cleanQuery = String(query || '').toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  if (cleanQuery.includes('sao paulo')) return false;
+  if (!location) return Boolean(cleanQuery);
+  return location.lat === -23.5505 && location.lon === -46.6333;
+}
+
+async function repairLegacyTripGeocodes(trip) {
+  const repairOrigin = hasLegacyFallbackCoordinates(trip.origem, trip.origem_geo);
+  const repairDestination = hasLegacyFallbackCoordinates(trip.destino, trip.destino_geo);
+  if (!repairOrigin && !repairDestination) return trip;
+
+  const [origin, destination] = await Promise.all([
+    repairOrigin ? geocodeLocation(trip.origem) : trip.origem_geo,
+    repairDestination ? geocodeLocation(trip.destino) : trip.destino_geo
+  ]);
+  trip.origem_geo = origin;
+  trip.destino_geo = destination;
+  await storage.saveTrip(trip);
+  return trip;
+}
+
+async function reverseGeocodeLocation(lat, lon) {
+  try {
+    const params = new URLSearchParams({
+      format: 'jsonv2',
+      lat: String(lat),
+      lon: String(lon),
+      zoom: '10',
+      addressdetails: '1'
+    });
+    const response = await fetch(`https://nominatim.openstreetmap.org/reverse?${params}`, {
+      headers: { 'User-Agent': 'GPISSI-InsanosMC/2.0 (seguranca@insanosmc.com)' },
+      signal: AbortSignal.timeout(8000)
+    });
+    if (!response.ok) return '';
+    const result = await response.json();
+    return gpsUtils.extractMunicipality(result.address);
+  } catch (error) {
+    console.warn('Reverse geocoding indisponível:', error.message);
+    return '';
+  }
+}
+
+function createSessionToken(userId) {
+  const payload = Buffer.from(JSON.stringify({ sub: userId, exp: Date.now() + 12 * 60 * 60 * 1000 })).toString('base64url');
+  const signature = crypto.createHmac('sha256', SESSION_SECRET).update(payload).digest('base64url');
+  return `${payload}.${signature}`;
+}
+
+function readSessionToken(req) {
+  const cookies = (req.headers.cookie || '').split(';').map(item => item.trim());
+  const entry = cookies.find(item => item.startsWith('gpissi_session='));
+  return entry ? decodeURIComponent(entry.slice('gpissi_session='.length)) : '';
+}
+
+function verifySessionToken(token) {
+  if (!SESSION_SECRET || !token) return null;
+  const [payload, signature] = token.split('.');
+  if (!payload || !signature) return null;
+  const expected = crypto.createHmac('sha256', SESSION_SECRET).update(payload).digest();
+  let supplied;
+  try {
+    supplied = Buffer.from(signature, 'base64url');
+  } catch (_) {
+    return null;
+  }
+  if (supplied.length !== expected.length || !crypto.timingSafeEqual(expected, supplied)) return null;
+  try {
+    const claims = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+    return claims.exp > Date.now() ? claims.sub : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function setSessionCookie(res, userId) {
+  const secure = process.env.VERCEL ? '; Secure' : '';
+  res.setHeader('Set-Cookie', `gpissi_session=${encodeURIComponent(createSessionToken(userId))}; HttpOnly; SameSite=Strict; Path=/; Max-Age=43200${secure}`);
+}
+
+async function requireAccount(req, res, next) {
+  try {
+    const userId = verifySessionToken(readSessionToken(req));
+    if (!userId) return res.status(401).json({ error: 'Entre na sua conta para continuar.' });
+    const user = await storage.findUserById(userId);
+    if (!user) {
+      return res.status(401).json({ error: 'Conta não encontrada.' });
+    }
+    req.user = { id: user.id, email: user.email, profile: JSON.parse(user.profile) };
+    next();
+  } catch (error) {
+    console.error('Erro ao validar conta:', error.message);
+    res.status(500).json({ error: 'Não foi possível validar sua conta.' });
+  }
+}
+
+async function loadOptionalAccount(req, res, next) {
+  try {
+    const userId = verifySessionToken(readSessionToken(req));
+    if (userId) {
+      const user = await storage.findUserById(userId);
+      if (user) {
+        req.user = { id: user.id, email: user.email, profile: JSON.parse(user.profile) };
+      }
+    }
+    next();
+  } catch (error) {
+    console.error('Erro ao carregar sessão opcional:', error.message);
+    next(error);
+  }
+}
+
+function requireSessionSecret(res) {
+  if (SESSION_SECRET) return true;
+  res.status(503).json({ error: 'Configure SESSION_SECRET antes de habilitar contas.' });
+  return false;
+}
+
+async function issueVisualChallenge(purpose, userId = null, excludedCode = '') {
+  const id = crypto.randomUUID();
+  const code = auth.generateChallengeCode(excludedCode);
+  const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+  await storage.saveChallenge({
+    id,
+    purpose,
+    user_id: userId,
+    code_hash: auth.hashChallengeCode(id, code, SESSION_SECRET),
+    expires_at: expiresAt,
+    created_at: new Date().toISOString()
+  });
+
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="380" height="66" viewBox="0 0 380 66"><rect width="380" height="66" rx="8" fill="#070809" stroke="#ff7700" stroke-width="2" stroke-dasharray="7 5"/><path d="M24 47L345 16M45 14L330 55" stroke="#343840" stroke-width="2"/><text x="190" y="44" text-anchor="middle" fill="#ff8800" font-family="monospace" font-size="29" font-weight="700" letter-spacing="9">${code}</text></svg>`;
+  return { id, image: `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}` };
+}
+
+async function verifyVisualChallenge(challengeId, purpose, userId, candidate) {
+  const challenge = await storage.findChallenge(challengeId);
+  await storage.consumeChallenge(challengeId);
+  if (!challenge || challenge.purpose !== purpose || (challenge.user_id && challenge.user_id !== userId)) return false;
+  if (new Date(challenge.expires_at).getTime() <= Date.now()) return false;
+  return auth.verifyChallengeCode(challenge.id, candidate, challenge.code_hash, SESSION_SECRET);
+}
+
+app.post('/api/auth/challenge', accountLimiter, async (req, res) => {
+  if (!requireSessionSecret(res)) return;
+  try {
+    const purpose = req.body.purpose === 'login' ? 'login' : 'register';
+    let userId = null;
+    if (purpose === 'login') {
+      const email = sanitizeString(req.body.email, 254).toLowerCase();
+      const user = await storage.findUserByEmail(email);
+      if (!user || !(await auth.verifyPassword(String(req.body.password || ''), user.password_hash))) {
+        return res.status(401).json({ error: 'E-mail ou senha inválidos.' });
+      }
+      userId = user.id;
+    }
+    const challenge = await issueVisualChallenge(purpose, userId);
+    res.json({ success: true, ...challenge });
+  } catch (error) {
+    console.error('Erro ao gerar desafio:', error.message);
+    res.status(500).json({ error: 'Não foi possível gerar a sequência de segurança.' });
+  }
+});
+
+app.post('/api/auth/register', accountLimiter, async (req, res) => {
+  if (!requireSessionSecret(res)) return;
+  try {
+    const email = sanitizeString(req.body.email, 254).toLowerCase();
+    const password = String(req.body.password || '');
+    const profile = {
+      nome: sanitizeString(req.body.nome, 100),
+      nome_colete: sanitizeString(req.body.nome_colete, 80),
+      telefone: String(req.body.telefone || '').replace(/\D/g, '').slice(0, 11),
+      funcao_grau: sanitizeString(req.body.funcao_grau, 100),
+      acompanhantes: []
+    };
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || password.length < 12 || !profile.nome || !profile.nome_colete || profile.telefone.length !== 11 || !profile.funcao_grau) {
+      return res.status(400).json({ error: 'Informe um e-mail válido, senha com ao menos 12 caracteres e todos os dados obrigatórios.' });
+    }
+    profile.telefone = `(${profile.telefone.slice(0, 2)}) ${profile.telefone[2]} ${profile.telefone.slice(3, 7)}-${profile.telefone.slice(7)}`;
+    const existing = await storage.findUserByEmail(email);
+    if (existing) return res.status(409).json({ error: 'Este e-mail já possui cadastro. Entre na sua conta.' });
+
+    const validChallenge = await verifyVisualChallenge(req.body.challenge_id, 'register', null, req.body.challenge_code);
+    if (!validChallenge) {
+      return res.status(401).json({
+        error: 'Sequência incorreta ou expirada. Uma nova sequência foi gerada.',
+        challenge: await issueVisualChallenge('register', null, req.body.challenge_code)
+      });
+    }
+
+    const user = {
+      id: crypto.randomUUID(),
+      email,
+      password_hash: await auth.hashPassword(password),
+      profile,
+      created_at: new Date().toISOString()
+    };
+    await storage.createUser(user);
+    setSessionCookie(res, user.id);
+    res.status(201).json({ success: true, profile });
+  } catch (error) {
+    console.error('Erro ao cadastrar conta:', error.message);
+    res.status(500).json({ error: 'Não foi possível criar a conta.' });
+  }
+});
+
+app.post('/api/auth/login', accountLimiter, async (req, res) => {
+  if (!requireSessionSecret(res)) return;
+  try {
+    const email = sanitizeString(req.body.email, 254).toLowerCase();
+    const user = await storage.findUserByEmail(email);
+    if (!user || !(await auth.verifyPassword(String(req.body.password || ''), user.password_hash))) {
+      return res.status(401).json({ error: 'E-mail ou senha inválidos.' });
+    }
+    if (!req.body.challenge_id) {
+      return res.json({ requires_challenge: true, challenge: await issueVisualChallenge('login', user.id) });
+    }
+    const validChallenge = await verifyVisualChallenge(req.body.challenge_id, 'login', user.id, req.body.challenge_code);
+    if (!validChallenge) {
+      return res.status(401).json({
+        error: 'Sequência incorreta ou expirada. Uma nova sequência foi gerada.',
+        requires_challenge: true,
+        challenge: await issueVisualChallenge('login', user.id, req.body.challenge_code)
+      });
+    }
+    setSessionCookie(res, user.id);
+    res.json({ success: true, profile: JSON.parse(user.profile) });
+  } catch (error) {
+    console.error('Erro ao entrar:', error.message);
+    res.status(500).json({ error: 'Não foi possível entrar na conta.' });
+  }
+});
+
+app.get('/api/auth/me', requireAccount, (req, res) => {
+  res.json({ user: { id: req.user.id, email: req.user.email, profile: req.user.profile } });
+});
+
+app.post('/api/auth/logout', (req, res) => {
+  const secure = process.env.VERCEL ? '; Secure' : '';
+  res.setHeader('Set-Cookie', `gpissi_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0${secure}`);
+  res.json({ success: true });
+});
+
+app.get('/api/members', requireAccount, async (req, res) => {
+  const members = await storage.listMembers();
+  const ownContacts = (req.user.profile.acompanhantes || []).map(contact => ({
+    id: contact.id,
+    kind: 'contact',
+    nome: contact.nome.trim().split(/\s+/)[0],
+    telefone: contact.telefone
+  }));
+  res.json([...members.filter(member => member.id !== req.user.id), ...ownContacts]);
+});
+
+app.get('/api/account/companions', requireAccount, (req, res) => {
+  res.json(req.user.profile.acompanhantes || []);
+});
+
+app.get('/api/account/emergency-contacts', requireAccount, (req, res) => {
+  res.json(req.user.profile.contatos_emergencia || []);
+});
+
+app.put('/api/account/companions', requireAccount, async (req, res) => {
+  const submitted = req.body.companions;
+  if (!Array.isArray(submitted) || submitted.length > 4) {
+    return res.status(400).json({ error: 'Cadastre no máximo quatro acompanhantes.' });
+  }
+
+  const companions = [];
+  for (const item of submitted) {
+    if (!item || typeof item !== 'object') {
+      return res.status(400).json({ error: 'Dados de acompanhante inválidos.' });
+    }
+    const nome = sanitizeString(item.nome, 100);
+    const digits = String(item.telefone || '').replace(/\D/g, '').slice(0, 11);
+    if (!nome && !digits) continue;
+    if (!nome || digits.length !== 11) {
+      return res.status(400).json({ error: 'Preencha o nome e um celular com DDD em cada acompanhante.' });
+    }
+    companions.push({
+      id: typeof item.id === 'string' && /^[a-f0-9-]{36}$/i.test(item.id) ? item.id : crypto.randomUUID(),
+      nome,
+      telefone: `(${digits.slice(0, 2)}) ${digits[2]} ${digits.slice(3, 7)}-${digits.slice(7)}`
+    });
+  }
+
+  const profile = { ...req.user.profile, acompanhantes: companions };
+  await storage.updateUserProfile(req.user.id, profile);
+  res.json({ success: true, companions });
+});
+
+app.put('/api/account/emergency-contacts', requireAccount, async (req, res) => {
+  const submitted = req.body.contacts;
+  if (!Array.isArray(submitted) || submitted.length > 3) {
+    return res.status(400).json({ error: 'Cadastre no máximo três contatos de emergência.' });
+  }
+
+  const contacts = [];
+  for (const item of submitted) {
+    if (!item || typeof item !== 'object') {
+      return res.status(400).json({ error: 'Dados de contato de emergência inválidos.' });
+    }
+    const nome = sanitizeString(item.nome, 100);
+    const digits = String(item.telefone || '').replace(/\D/g, '').slice(0, 11);
+    if (!nome && !digits) continue;
+    if (!nome || digits.length !== 11) {
+      return res.status(400).json({ error: 'Preencha nome e celular com DDD para cada contato de emergência.' });
+    }
+    contacts.push({
+      id: typeof item.id === 'string' && /^[a-f0-9-]{36}$/i.test(item.id) ? item.id : crypto.randomUUID(),
+      nome,
+      telefone: `(${digits.slice(0, 2)}) ${digits[2]} ${digits.slice(3, 7)}-${digits.slice(7)}`
+    });
+  }
+
+  const profile = { ...req.user.profile, contatos_emergencia: contacts };
+  await storage.updateUserProfile(req.user.id, profile);
+  res.json({ success: true, contacts });
+});
+
+app.get('/api/minhas-viagens', requireAccount, async (req, res) => {
+  const trips = await storage.listUserTrips(req.user.id);
+  for (const trip of trips) {
+    if (!trip.share_token) {
+      trip.share_token = crypto.randomBytes(32).toString('base64url');
+      await storage.saveTrip(trip);
+    }
+  }
+  res.json(trips);
+});
 
 // API: Search Brazilian Cities (IBGE)
 app.get('/api/cidades', (req, res) => {
@@ -366,7 +666,7 @@ app.get('/api/gerar-pin', (req, res) => {
 // API: Calculate route and arrival time
 app.post('/api/calcular-rota', async (req, res) => {
   try {
-    const { origem, destino, data_saida, hora_saida } = req.body;
+    const { origem, destino, data_saida, hora_saida, transporte_tipo } = req.body;
     if (!origem || !destino) {
       return res.status(400).json({ error: 'Origem e Destino são obrigatórios.' });
     }
@@ -375,6 +675,9 @@ app.post('/api/calcular-rota', async (req, res) => {
       geocodeLocation(origem),
       geocodeLocation(destino)
     ]);
+    if (!geoOrigem || !geoDestino) {
+      return res.status(422).json({ error: 'Não foi possível localizar uma das cidades no mapa. Confira cidade e estado e tente novamente.' });
+    }
 
     let distanceKm = 0;
     let durationSeconds = 0;
@@ -386,7 +689,6 @@ app.post('/api/calcular-rota', async (req, res) => {
         const osrmData = await osrmRes.json();
         if (osrmData.routes && osrmData.routes.length > 0) {
           distanceKm = Math.round(osrmData.routes[0].distance / 1000);
-          durationSeconds = osrmData.routes[0].duration;
         }
       }
     } catch (e) {
@@ -403,8 +705,10 @@ app.post('/api/calcular-rota', async (req, res) => {
         Math.sin(dLon/2) * Math.sin(dLon/2);
       const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
       distanceKm = Math.round(R * c * 1.25);
-      durationSeconds = (distanceKm / 75) * 3600 + (Math.floor(distanceKm / 150) * 900);
     }
+
+    const estimate = estimateDurationSeconds(distanceKm, transporte_tipo);
+    durationSeconds = estimate.durationSeconds;
 
     let previsaoHora = '';
     const saidaDate = data_saida || new Date().toISOString().split('T')[0];
@@ -435,6 +739,8 @@ app.post('/api/calcular-rota', async (req, res) => {
       duration_hours: durationH,
       duration_minutes: durationM,
       duration_text: `${durationH}h ${durationM}min`,
+      average_speed_kmh: estimate.averageSpeedKmh,
+      stop_minutes: estimate.stopMinutes,
       previsao_chegada_hora: previsaoHora
     });
   } catch (err) {
@@ -444,8 +750,8 @@ app.post('/api/calcular-rota', async (req, res) => {
 });
 
 // API: List trips - ORDENADO DO MAIS RECENTE PARA O MAIS ANTIGO
-app.get('/api/viagens', (req, res) => {
-  const viagens = readViagens();
+app.get('/api/viagens', requireAccount, async (req, res) => {
+  const viagens = await storage.listUserTrips(req.user.id);
   const list = viagens.map(v => ({
     id: v.id,
     origem: v.origem,
@@ -470,38 +776,42 @@ app.get('/api/viagens', (req, res) => {
     checkins: v.checkins || [],
     created_at: v.created_at,
     closed_at: v.closed_at,
-    encerramento_motivo: v.encerramento_motivo || ''
+    encerramento_motivo: v.encerramento_motivo || '',
+    share_token: v.share_token
   })).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
   res.json(list);
 });
 
 // API: Get single trip
-app.get('/api/viagens/:id', (req, res) => {
+app.get('/api/viagens/:id', loadOptionalAccount, async (req, res) => {
   const { id } = req.params;
   if (!isValidTripId(id)) {
     return res.status(400).json({ error: 'ID de protocolo inválido.' });
   }
 
-  const token = req.headers['x-creator-token'] || req.query.token;
-  const pin = req.headers['x-creator-pin'] || req.query.pin;
+  const shareToken = req.query.share;
 
-  const viagens = readViagens();
-  const viagem = viagens.find(v => v.id === id);
+  let viagem = await storage.findTrip(id);
 
   if (!viagem) {
     return res.status(404).json({ error: 'Protocolo de viagem não encontrado ou expirado.' });
   }
 
-  const isCreator = Boolean(
-    (token && viagem.admin_token && token === viagem.admin_token) ||
-    (pin && viagem.creator_pin && String(pin).trim() === String(viagem.creator_pin).trim())
-  );
+  viagem = await repairLegacyTripGeocodes(viagem);
+
+  const isCreator = Boolean(req.user && viagem.owner_user_id === req.user.id);
+
+  const shareValid = securelyMatches(shareToken, viagem.share_token);
+  if (!isCreator && !shareValid) {
+    return res.status(404).json({ error: 'Link de rastreamento inválido ou expirado.' });
+  }
 
   const publicData = { ...viagem };
   if (!isCreator) {
     delete publicData.admin_token;
     delete publicData.creator_pin;
+    delete publicData.owner_user_id;
   }
   publicData.is_creator = isCreator;
 
@@ -514,7 +824,7 @@ app.get('/api/gerar-pin', (req, res) => {
 });
 
 // API: Register new trip (With createTripLimiter & XSS sanitization)
-app.post('/api/viagens', createTripLimiter, async (req, res) => {
+app.post('/api/viagens', createTripLimiter, requireAccount, async (req, res) => {
   try {
     const {
       origem,
@@ -547,15 +857,38 @@ app.post('/api/viagens', createTripLimiter, async (req, res) => {
     // SANITIZAÇÃO DE ENTRADA CONTRA XSS / INJEÇÃO
     const cleanOrigem = sanitizeString(origem, 120);
     const cleanDestino = sanitizeString(destino, 120);
-    const cleanNomeColete = sanitizeString(nome_colete, 80);
-    const cleanTelefone = sanitizeString(telefone, 25);
-    const cleanGrau = sanitizeString(grau || 'CAMISETA - X', 50);
+    const cleanNomeColete = req.user.profile.nome_colete;
+    const cleanTelefone = req.user.profile.telefone;
+    const cleanGrau = req.user.profile.funcao_grau || [req.user.profile.grau, req.user.profile.funcao].filter(Boolean).join(' - ') || 'Integrante';
     const cleanTransporteTipo = ['MOTO', 'CARRO', 'ÔNIBUS', 'OUTRO'].includes(transporte_tipo) ? transporte_tipo : 'MOTO';
     const cleanTransporteMarca = sanitizeString(transporte_marca, 60);
     const cleanTransporteModelo = sanitizeString(transporte_modelo, 60);
     const cleanTransportePlaca = sanitizeString(transporte_placa, 12).toUpperCase();
     const cleanVaiAcompanhado = vai_acompanhado === 'Sim' ? 'Sim' : 'Não';
-    const cleanQuemVaiJunto = sanitizeString(quem_vai_junto, 200);
+    const companionIds = Array.isArray(req.body.companion_ids) ? [...new Set(req.body.companion_ids)].slice(0, 5) : [];
+    if (companionIds.length > 4 || (vai_acompanhado === 'Sim' && companionIds.length === 0)) {
+      return res.status(400).json({ error: 'Selecione de um a quatro acompanhantes cadastrados.' });
+    }
+    if (vai_acompanhado !== 'Sim' && companionIds.length > 0) {
+      return res.status(400).json({ error: 'Remova os acompanhantes ou habilite a opção de viagem acompanhada.' });
+    }
+    const members = companionIds.length ? await storage.listMembers() : [];
+    const ownContacts = req.user.profile.acompanhantes || [];
+    const availableCompanions = [
+      ...members.filter(member => member.id !== req.user.id),
+      ...ownContacts.map(contact => ({
+        id: contact.id,
+        nome_colete: contact.nome,
+        grau: 'Contato',
+        funcao: 'Acompanhante',
+        telefone: contact.telefone
+      }))
+    ];
+    const companions = companionIds.map(memberId => availableCompanions.find(member => member.id === memberId)).filter(Boolean);
+    if (companions.length !== companionIds.length || companions.some(member => member.id === req.user.id)) {
+      return res.status(400).json({ error: 'Um ou mais acompanhantes não estão cadastrados.' });
+    }
+    const cleanQuemVaiJunto = companions.map(member => member.nome_colete).join(', ');
     const cleanEmergenciaContato = sanitizeString(emergencia_contato, 80);
     const cleanEmergenciaTelefone = sanitizeString(emergencia_telefone, 25);
     const cleanNotas = sanitizeString(observacoes_notas, 1000);
@@ -573,6 +906,15 @@ app.post('/api/viagens', createTripLimiter, async (req, res) => {
       geocodeLocation(cleanOrigem),
       geocodeLocation(cleanDestino)
     ]);
+    if (!origemGeo || !destinoGeo) {
+      return res.status(422).json({ error: 'Não foi possível localizar uma das cidades no mapa. Confira cidade e estado e tente novamente.' });
+    }
+
+    const emergencyContactId = sanitizeString(req.body.emergency_contact_id, 50);
+    const emergencyContact = (req.user.profile.contatos_emergencia || []).find(contact => contact.id === emergencyContactId);
+    if (!emergencyContact) {
+      return res.status(400).json({ error: 'Selecione um contato de emergência cadastrado na sua conta.' });
+    }
 
     const id = 'INS-' + Math.random().toString(36).substring(2, 6).toUpperCase() + '-' + Math.floor(1000 + Math.random() * 9000);
     const admin_token = crypto.randomUUID();
@@ -589,7 +931,9 @@ app.post('/api/viagens', createTripLimiter, async (req, res) => {
 
     const novaViagem = {
       id,
+      owner_user_id: req.user.id,
       admin_token,
+      share_token: crypto.randomBytes(32).toString('base64url'),
       creator_pin: pin,
       status: 'EM ANDAMENTO',
       origem: cleanOrigem,
@@ -610,8 +954,10 @@ app.post('/api/viagens', createTripLimiter, async (req, res) => {
       transporte_detalhe: vDetalhe,
       vai_acompanhado: cleanVaiAcompanhado,
       quem_vai_junto: cleanQuemVaiJunto,
-      emergencia_contato: cleanEmergenciaContato,
-      emergencia_telefone: cleanEmergenciaTelefone,
+      acompanhantes: companions.map(({ id: memberId, nome_colete, grau, funcao }) => ({ id: memberId, nome_colete, grau, funcao })),
+      emergencia_contato: emergencyContact.nome,
+      emergencia_telefone: emergencyContact.telefone,
+      emergency_contact_id: emergencyContact.id,
       observacoes_notas: cleanNotas,
       observacoes_resumo: cleanResumo,
       checkins: [
@@ -623,20 +969,20 @@ app.post('/api/viagens', createTripLimiter, async (req, res) => {
           cidade: cleanOrigem
         }
       ],
+      last_city: cleanOrigem,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       closed_at: null,
       encerramento_motivo: ''
     };
 
-    const viagens = readViagens();
-    viagens.push(novaViagem);
-    saveViagens(viagens);
+    await storage.saveTrip(novaViagem);
 
     res.status(201).json({
       success: true,
       id: novaViagem.id,
       admin_token: novaViagem.admin_token,
+      share_token: novaViagem.share_token,
       creator_pin: novaViagem.creator_pin,
       viagem: novaViagem
     });
@@ -647,7 +993,7 @@ app.post('/api/viagens', createTripLimiter, async (req, res) => {
 });
 
 // API: Close trip (Creator only) - Protegido com pinAuthLimiter contra ataques de força bruta no PIN
-app.post('/api/viagens/:id/encerrar', pinAuthLimiter, (req, res) => {
+app.post('/api/viagens/:id/encerrar', pinAuthLimiter, loadOptionalAccount, async (req, res) => {
   const { id } = req.params;
   if (!isValidTripId(id)) {
     return res.status(400).json({ error: 'ID de protocolo inválido.' });
@@ -657,14 +1003,10 @@ app.post('/api/viagens/:id/encerrar', pinAuthLimiter, (req, res) => {
   const pin = req.headers['x-creator-pin'] || req.body.pin || req.query.pin;
   const motivo = sanitizeString(req.body.motivo, 300) || 'Chegada confirmada com segurança ao destino!';
 
-  const viagens = readViagens();
-  const index = viagens.findIndex(v => v.id === id);
-
-  if (index === -1) {
+  const viagem = await storage.findTrip(id);
+  if (!viagem) {
     return res.status(404).json({ error: 'Protocolo de viagem não encontrado ou expirado.' });
   }
-
-  const viagem = viagens[index];
 
   if (viagem.status === 'CONCLUÍDA') {
     return res.status(400).json({ error: 'Este protocolo de viagem já foi encerrado.' });
@@ -673,7 +1015,8 @@ app.post('/api/viagens/:id/encerrar', pinAuthLimiter, (req, res) => {
   const tokenValid = token && viagem.admin_token && token === viagem.admin_token;
   const pinValid = pin && viagem.creator_pin && String(pin).trim() === String(viagem.creator_pin).trim();
 
-  if (!tokenValid && !pinValid) {
+  const ownerValid = req.user && viagem.owner_user_id === req.user.id;
+  if (!tokenValid && !pinValid && !ownerValid) {
     return res.status(403).json({
       error: 'ACESSO NEGADO: Apenas quem registrou o protocolo pode encerrar a viagem! Informe o Token ou PIN de Segurança correto.'
     });
@@ -690,12 +1033,12 @@ app.post('/api/viagens/:id/encerrar', pinAuthLimiter, (req, res) => {
       lat: viagem.destino_geo.lat,
       lng: viagem.destino_geo.lon,
       descricao: 'Viagem Encerrada: ' + motivo,
-      cidade: viagem.destino
+      cidade: viagem.destino,
+      tipo: 'arrival'
     });
   }
 
-  viagens[index] = viagem;
-  saveViagens(viagens);
+  await storage.saveTrip(viagem);
 
   res.json({
     success: true,
@@ -705,7 +1048,7 @@ app.post('/api/viagens/:id/encerrar', pinAuthLimiter, (req, res) => {
 });
 
 // API: Checkin / GPS update (Protegido por checkinLimiter)
-app.post('/api/viagens/:id/checkin', checkinLimiter, (req, res) => {
+app.post('/api/viagens/:id/checkin', checkinLimiter, loadOptionalAccount, async (req, res) => {
   const { id } = req.params;
   if (!isValidTripId(id)) {
     return res.status(400).json({ error: 'ID de protocolo inválido.' });
@@ -715,19 +1058,15 @@ app.post('/api/viagens/:id/checkin', checkinLimiter, (req, res) => {
   const pin = req.headers['x-creator-pin'] || req.body.pin;
   const { lat, lng, descricao, cidade, timestamp, batch } = req.body;
 
-  const viagens = readViagens();
-  const index = viagens.findIndex(v => v.id === id);
-
-  if (index === -1) {
+  const viagem = await storage.findTrip(id);
+  if (!viagem) {
     return res.status(404).json({ error: 'Protocolo não encontrado ou expirado.' });
   }
 
-  const viagem = viagens[index];
-
   const tokenValid = token && viagem.admin_token && token === viagem.admin_token;
   const pinValid = pin && viagem.creator_pin && String(pin).trim() === String(viagem.creator_pin).trim();
-
-  if (!tokenValid && !pinValid) {
+  const ownerValid = req.user && viagem.owner_user_id === req.user.id;
+  if (!tokenValid && !pinValid && !ownerValid) {
     return res.status(403).json({
       error: 'Apenas quem registrou a viagem pode transmitir novos check-ins de localização.'
     });
@@ -743,39 +1082,44 @@ app.post('/api/viagens/:id/checkin', checkinLimiter, (req, res) => {
     batch.slice(0, 30).forEach(item => {
       const bLat = parseFloat(item.lat);
       const bLng = parseFloat(item.lng);
-      if (!isNaN(bLat) && !isNaN(bLng)) {
+      if (gpsUtils.isValidCoordinate(bLat, bLng)) {
         viagem.checkins.push({
           timestamp: item.timestamp || new Date().toISOString(),
           lat: bLat,
           lng: bLng,
           descricao: sanitizeString(item.descricao || 'Ponto no Trajeto (Sincronizado)', 100),
-          cidade: sanitizeString(item.cidade || 'Rodovia', 100)
+          cidade: sanitizeString(item.cidade || 'Localização offline sincronizada', 100),
+          tipo: 'gps'
         });
       }
     });
   } else {
     const pLat = parseFloat(lat);
     const pLng = parseFloat(lng);
-    if (isNaN(pLat) || isNaN(pLng)) {
+    if (!gpsUtils.isValidCoordinate(pLat, pLng)) {
       return res.status(400).json({ error: 'Latitude e Longitude válidas são obrigatórias para check-in.' });
     }
 
-    const checkin = {
-      timestamp: timestamp || new Date().toISOString(),
+    const passageCity = await reverseGeocodeLocation(pLat, pLng);
+    const lastCheckinCity = viagem.checkins[viagem.checkins.length - 1]?.cidade;
+    const previousCity = viagem.last_city || lastCheckinCity;
+    const checkin = gpsUtils.buildGpsCheckin({
       lat: pLat,
       lng: pLng,
-      descricao: sanitizeString(descricao || 'Check-in no Trajeto (5 min)', 100),
-      cidade: sanitizeString(cidade || 'Ponto na Rodovia', 100)
-    };
+      timestamp,
+      description: sanitizeString(descricao || 'Ponto GPS no trajeto', 100),
+      city: sanitizeString(cidade || 'Localização GPS', 100),
+      reverseGeocodedCity: passageCity
+    }, previousCity);
     viagem.checkins.push(checkin);
+    if (passageCity) viagem.last_city = passageCity;
   }
 
   const last = viagem.checkins[viagem.checkins.length - 1];
   viagem.last_location = last;
   viagem.updated_at = new Date().toISOString();
 
-  viagens[index] = viagem;
-  saveViagens(viagens);
+  await storage.saveTrip(viagem);
 
   res.json({
     success: true,
@@ -791,6 +1135,10 @@ app.get('/', (req, res) => {
 
 app.get('/dashboard', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+app.get('/conta', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'account.html'));
 });
 
 app.get('/novo', (req, res) => {

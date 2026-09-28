@@ -255,6 +255,7 @@
         <a href="/" class="nav-btn active">📊 Dashboard</a>
         <a href="/novo" class="nav-btn">📝 Novo Protocolo</a>
         <a href="/radar" class="nav-btn">📡 Radar</a>
+        <a href="/conta" class="nav-btn">👤 Conta</a>
       </nav>
     </div>
   </header>
@@ -379,6 +380,10 @@
     async function fetchDashboardTrips(isSilent = false) {
       try {
         const res = await fetch('/api/viagens');
+        if (res.status === 401) {
+          window.location.href = '/conta';
+          return;
+        }
         if (!res.ok) throw new Error('Falha ao obter lista de viagens');
         // The server already sorts from most recent to oldest
         allTrips = await res.json();
@@ -450,7 +455,7 @@
         }
 
         return `
-          <div class="dash-card active-trip" onclick="window.location.href='/radar?id=${t.id}'">
+          <div class="dash-card active-trip" onclick="window.location.href='/tracker?id=${encodeURIComponent(t.id)}&share=${encodeURIComponent(t.share_token || '')}'">
             <div class="dash-card-pilot">
               <div>
                 <div class="dash-pilot-name">
@@ -506,7 +511,7 @@
         }
 
         return `
-          <div class="dash-card closed-trip" onclick="window.location.href='/radar?id=${t.id}'">
+          <div class="dash-card closed-trip" onclick="window.location.href='/tracker?id=${encodeURIComponent(t.id)}&share=${encodeURIComponent(t.share_token || '')}'">
             <div class="dash-card-pilot">
               <div>
                 <div class="dash-pilot-name">

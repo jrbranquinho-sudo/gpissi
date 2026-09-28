@@ -11,6 +11,9 @@ let originMarker = null;
 let destMarker = null;
 let checkinMarkers = [];
 let routeSourceAdded = false;
+let plannedRouteKey = '';
+let plannedRoutePromise = null;
+let isSendingGps = false;
 
 // 5-minute GPS tracking timer
 const TRACK_INTERVAL_SECONDS = 300; // 5 minutos
@@ -21,6 +24,7 @@ let countdownTimer = null;
 document.addEventListener('DOMContentLoaded', () => {
   const urlParams = new URLSearchParams(window.location.search);
   const tripId = urlParams.get('id');
+  const shareToken = urlParams.get('share');
   const tokenParam = urlParams.get('token');
   const pinParam = urlParams.get('pin');
 
@@ -44,12 +48,12 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   initOpenFreeMap();
-  loadTripData(tripId);
+  loadTripData(tripId, false, shareToken);
 
   // Auto-refresh for viewers every 25 seconds
   setInterval(() => {
     if (currentTrip && currentTrip.status === 'EM ANDAMENTO') {
-      loadTripData(tripId, true);
+      loadTripData(tripId, true, shareToken);
     }
   }, 25000);
 
@@ -68,23 +72,29 @@ function initOpenFreeMap() {
 
   map.addControl(new maplibregl.NavigationControl(), 'top-right');
   map.addControl(new maplibregl.FullscreenControl(), 'top-right');
+  map.on('error', event => console.warn('Erro no mapa:', event.error || event));
+  map.on('load', () => {
+    map.resize();
+    if (currentTrip) renderMapElements(currentTrip);
+  });
 
   document.getElementById('btnFitMap').addEventListener('click', () => {
     fitRouteBounds();
   });
 }
 
-async function loadTripData(tripId, isSilent = false) {
+async function loadTripData(tripId, isSilent = false, shareToken = '') {
   try {
     const headers = {};
     if (userAuthToken) headers['x-creator-token'] = userAuthToken;
     if (userAuthPin) headers['x-creator-pin'] = userAuthPin;
 
-    const res = await fetch(`/api/viagens/${tripId}`, { headers });
+    const shareQuery = shareToken ? `?share=${encodeURIComponent(shareToken)}` : '';
+    const res = await fetch(`/api/viagens/${tripId}${shareQuery}`, { headers });
     if (!res.ok) {
       if (res.status === 404) {
-        alert('Protocolo de viagem não encontrado ou expirado após 72h.');
-        window.location.href = '/radar';
+        alert('Link de rastreamento inválido ou expirado. Acompanhe a viagem pelo link compartilhado pelo responsável.');
+        window.location.href = '/conta';
         return;
       }
       throw new Error('Falha ao carregar telemetria.');
@@ -205,6 +215,24 @@ function renderTripDetails(trip) {
     document.getElementById('lastCheckinDesc').textContent = `${last.descricao} (${last.cidade || 'Ponto na Rodovia'})`;
   }
 
+  const historyList = document.getElementById('locationHistoryList');
+  const locationPoints = (trip.checkins || []).slice(-12).reverse();
+  historyList.replaceChildren();
+  if (locationPoints.length === 0) {
+    const empty = document.createElement('li');
+    empty.textContent = 'Aguardando registros GPS.';
+    historyList.append(empty);
+  } else {
+    locationPoints.forEach(point => {
+      const item = document.createElement('li');
+      const date = new Date(point.timestamp);
+      const type = point.tipo === 'city_passage' ? 'Passagem por' : (point.tipo === 'arrival' ? 'Chegada em' : 'Ponto GPS em');
+      item.textContent = `${type} ${point.cidade || 'Localização GPS'} · ${date.toLocaleDateString('pt-BR')} ${date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
+      if (point.tipo === 'city_passage' || point.tipo === 'arrival') item.classList.add('location-passage');
+      historyList.append(item);
+    });
+  }
+
   // WhatsApp Share Text
   const trackerShareUrl = window.location.href;
   const waShareMsg = `*GPISSI - INSANO NA ESTRADA - INSANOS MC*\n👤 Integrante: ${trip.nome_colete} (${trip.grau})\n🛣️ Rota: ${trip.origem} ➔ ${trip.destino}\n🚦 Status: ${trip.status}\n\n📍 *Acompanhe em tempo real no mapa OpenFreeMap:*\n${trackerShareUrl}`;
@@ -275,8 +303,10 @@ function start5MinuteAutoTracking(tripId) {
 
   trackCountdown = TRACK_INTERVAL_SECONDS;
 
-  // Immediate initial check-in if none yet
-  if (currentTrip && currentTrip.checkins && currentTrip.checkins.length <= 1) {
+  syncOfflineCheckins(tripId);
+
+  // Capture current position whenever the trip owner opens the tracker.
+  if (currentTrip && currentTrip.status === 'EM ANDAMENTO') {
     transmitGpsLocation(tripId, true);
   }
 
@@ -307,6 +337,7 @@ function stop5MinuteAutoTracking() {
 
 // TRANSMIT GPS LOCATION (Handles online transmission or offline queueing if cell signal drops)
 function transmitGpsLocation(tripId, isAutomatic = false) {
+  if (isSendingGps) return;
   if (!navigator.geolocation) {
     if (!isAutomatic) alert('Geolocalização não é suportada pelo seu dispositivo.');
     return;
@@ -320,22 +351,24 @@ function transmitGpsLocation(tripId, isAutomatic = false) {
 
   navigator.geolocation.getCurrentPosition(
     async (pos) => {
+      isSendingGps = true;
       const lat = pos.coords.latitude;
       const lng = pos.coords.longitude;
-      const timestamp = new Date().toISOString();
+      const timestamp = new Date(pos.timestamp || Date.now()).toISOString();
 
       const pointData = {
         lat,
         lng,
         timestamp,
         descricao: isAutomatic ? 'Ponto Automático no Trajeto (5 min)' : 'Ponto Marcado no Trajeto',
-        cidade: 'Rodovia / Em Trânsito'
+        cidade: 'Localização GPS'
       };
 
       // Check online status
       if (!navigator.onLine) {
         saveOfflineCheckin(tripId, pointData);
         showOfflineNotice(true);
+        isSendingGps = false;
         if (!isAutomatic && btn) {
           btn.disabled = false;
           btn.innerHTML = '<span>📡 Transmitir Ponto no Trajeto Agora</span>';
@@ -359,7 +392,7 @@ function transmitGpsLocation(tripId, isAutomatic = false) {
         }
 
         showOfflineNotice(false);
-        loadTripData(tripId, true);
+        loadTripData(tripId, true, shareToken);
 
         // Also check if any offline points were pending
         syncOfflineCheckins(tripId);
@@ -370,6 +403,7 @@ function transmitGpsLocation(tripId, isAutomatic = false) {
         saveOfflineCheckin(tripId, pointData);
         showOfflineNotice(true);
       } finally {
+        isSendingGps = false;
         if (!isAutomatic && btn) {
           btn.disabled = false;
           btn.innerHTML = '<span>📡 Transmitir Ponto no Trajeto Agora</span>';
@@ -377,6 +411,7 @@ function transmitGpsLocation(tripId, isAutomatic = false) {
       }
     },
     (err) => {
+      isSendingGps = false;
       console.warn('Erro ao obter GPS:', err);
       // If signal drops or GPS fails, keep last recorded position intact!
       showOfflineNotice(true);
@@ -452,7 +487,9 @@ function showOfflineNotice(isOffline) {
 function setupNetworkListeners(tripId) {
   window.addEventListener('online', () => {
     showOfflineNotice(false);
-    syncOfflineCheckins(tripId);
+    if (currentTrip && isCreatorAuth && currentTrip.status === 'EM ANDAMENTO') {
+      syncOfflineCheckins(tripId).finally(() => transmitGpsLocation(tripId, true));
+    }
   });
   window.addEventListener('offline', () => {
     showOfflineNotice(true);
@@ -465,11 +502,13 @@ function renderMapElements(trip) {
 
   const oGeo = trip.origem_geo;
   const dGeo = trip.destino_geo;
-  if (!oGeo || !dGeo) return;
+  const hasOrigin = oGeo && GPISSIGps.isValidCoordinate(oGeo.lat, oGeo.lon);
+  const hasDestination = dGeo && GPISSIGps.isValidCoordinate(dGeo.lat, dGeo.lon);
+  if (!hasOrigin && !hasDestination && !(trip.checkins || []).some(point => GPISSIGps.isValidCoordinate(point.lat, point.lng))) return;
 
   // Wait for map style to be loaded if not yet ready
   if (!map.isStyleLoaded()) {
-    map.once('load', () => renderMapElements(trip));
+    map.once('style.load', () => renderMapElements(trip));
     return;
   }
 
@@ -484,7 +523,8 @@ function renderMapElements(trip) {
   elOrigin.className = 'custom-maplibre-marker';
   elOrigin.innerHTML = `<div style="background: #00e676; color: #000; width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 16px; font-weight: 800; border: 3px solid #000; box-shadow: 0 0 15px rgba(0, 230, 118, 0.8);">🏁</div>`;
 
-  originMarker = new maplibregl.Marker({ element: elOrigin })
+  elOrigin.title = `Partida: ${trip.origem}`;
+  if (hasOrigin) originMarker = new maplibregl.Marker({ element: elOrigin })
     .setLngLat([oGeo.lon, oGeo.lat])
     .setPopup(new maplibregl.Popup({ offset: 25 }).setHTML(`
       <div style="font-family: sans-serif; color: #000;">
@@ -499,7 +539,8 @@ function renderMapElements(trip) {
   elDest.className = 'custom-maplibre-marker';
   elDest.innerHTML = `<div style="background: #ff6600; color: #fff; width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 3px solid #000; box-shadow: 0 0 20px rgba(255, 102, 0, 0.9);"><img src="/images/caveirasembg.png" style="height: 24px; width: auto;" alt="Caveira"></div>`;
 
-  destMarker = new maplibregl.Marker({ element: elDest })
+  elDest.title = `Destino: ${trip.destino}`;
+  if (hasDestination) destMarker = new maplibregl.Marker({ element: elDest })
     .setLngLat([dGeo.lon, dGeo.lat])
     .setPopup(new maplibregl.Popup({ offset: 25 }).setHTML(`
       <div style="font-family: sans-serif; color: #000;">
@@ -514,32 +555,46 @@ function renderMapElements(trip) {
     trip.checkins.forEach((chk, idx) => {
       if (idx === 0) return; // skip initial origin
 
+      if (!GPISSIGps.isValidCoordinate(chk.lat, chk.lng)) return;
+      const isPassage = chk.tipo === 'city_passage';
+      const isArrival = chk.tipo === 'arrival';
       const isLast = (idx === trip.checkins.length - 1 && trip.status === 'EM ANDAMENTO');
       const elChk = document.createElement('div');
       elChk.className = 'custom-maplibre-marker';
-      elChk.innerHTML = `<div style="background: ${isLast ? '#ffaa00' : '#00b0ff'}; color: #000; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 15px; border: 2px solid #000; box-shadow: 0 0 15px rgba(255, 170, 0, 0.9);">${isLast ? '🏍️' : '📍'}</div>`;
+      const markerColor = isPassage || isArrival ? '#00e676' : (isLast ? '#ffaa00' : '#00b0ff');
+      const markerIcon = isArrival ? '🏁' : (isPassage ? '🏙️' : (isLast ? '🏍️' : '📍'));
+      elChk.title = chk.descricao || chk.cidade || 'Ponto GPS';
+      elChk.innerHTML = `<div style="background: ${markerColor}; color: #000; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 15px; border: 2px solid #000; box-shadow: 0 0 15px rgba(255, 170, 0, 0.9);">${markerIcon}</div>`;
 
       const d = new Date(chk.timestamp);
+      const popupContent = document.createElement('div');
+      popupContent.style.cssText = 'font-family:sans-serif;color:#000;min-width:170px';
+      const title = document.createElement('strong');
+      title.textContent = chk.descricao || (isPassage ? `Passagem por ${chk.cidade}` : 'Ponto GPS');
+      const city = document.createElement('div');
+      city.textContent = chk.cidade || 'Localização GPS';
+      const time = document.createElement('small');
+      time.textContent = `${d.toLocaleDateString('pt-BR')} ${d.toLocaleTimeString('pt-BR')}`;
+      popupContent.append(title, city, time);
       const chkMarker = new maplibregl.Marker({ element: elChk })
         .setLngLat([chk.lng, chk.lat])
-        .setPopup(new maplibregl.Popup({ offset: 25 }).setHTML(`
-          <div style="font-family: sans-serif; color: #000; min-width: 170px;">
-            <strong>${chk.descricao}</strong><br>
-            <span>${chk.cidade || ''}</span><br>
-            <small>${d.toLocaleDateString('pt-BR')} ${d.toLocaleTimeString('pt-BR')}</small>
-          </div>
-        `))
+        .setPopup(new maplibregl.Popup({ offset: 25 }).setDOMContent(popupContent))
         .addTo(map);
 
       checkinMarkers.push(chkMarker);
     });
   }
 
-  // 4. Fetch road geometry from OSRM and draw on OpenFreeMap
-  fetchRoadRoute([oGeo.lon, oGeo.lat], [dGeo.lon, dGeo.lat]);
+  drawRecordedTrack(trip.checkins || []);
+  if (hasOrigin && hasDestination) fetchRoadRoute([oGeo.lon, oGeo.lat], [dGeo.lon, dGeo.lat]);
+  else fitRouteBounds();
 }
 
 async function fetchRoadRoute(startCoord, endCoord) {
+  const routeKey = `${startCoord.join(',')}:${endCoord.join(',')}`;
+  if (routeKey === plannedRouteKey && plannedRoutePromise) return plannedRoutePromise;
+  plannedRouteKey = routeKey;
+  plannedRoutePromise = (async () => {
   try {
     const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${startCoord[0]},${startCoord[1]};${endCoord[0]},${endCoord[1]}?overview=full&geometries=geojson`;
     const res = await fetch(osrmUrl);
@@ -580,6 +635,8 @@ async function fetchRoadRoute(startCoord, endCoord) {
   };
   drawRouteOnMap(straightGeoJson);
   fitRouteBounds();
+  })();
+  return plannedRoutePromise;
 }
 
 function drawRouteOnMap(geojson) {
@@ -593,7 +650,7 @@ function drawRouteOnMap(geojson) {
       data: geojson
     });
 
-    map.addLayer({
+    const routeLayer = {
       id: 'route-line-layer',
       type: 'line',
       source: 'route-line',
@@ -606,8 +663,28 @@ function drawRouteOnMap(geojson) {
         'line-width': 6,
         'line-opacity': 0.95
       }
-    });
+    };
+    map.addLayer(routeLayer, map.getLayer('recorded-track-layer') ? 'recorded-track-layer' : undefined);
   }
+  routeSourceAdded = true;
+}
+
+function drawRecordedTrack(checkins) {
+  if (!map || !map.isStyleLoaded()) return;
+  const feature = GPISSIGps.buildTrackFeature(checkins);
+  const data = feature || { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: [] } };
+  if (map.getSource('recorded-track')) {
+    map.getSource('recorded-track').setData(data);
+    return;
+  }
+  map.addSource('recorded-track', { type: 'geojson', data });
+  map.addLayer({
+    id: 'recorded-track-layer',
+    type: 'line',
+    source: 'recorded-track',
+    layout: { 'line-join': 'round', 'line-cap': 'round' },
+    paint: { 'line-color': '#00b0ff', 'line-width': 4, 'line-opacity': 0.95 }
+  });
 }
 
 function fitRouteBounds() {
@@ -615,19 +692,20 @@ function fitRouteBounds() {
 
   const oGeo = currentTrip.origem_geo;
   const dGeo = currentTrip.destino_geo;
-  if (!oGeo || !dGeo) return;
+  const hasOrigin = oGeo && GPISSIGps.isValidCoordinate(oGeo.lat, oGeo.lon);
+  const hasDestination = dGeo && GPISSIGps.isValidCoordinate(dGeo.lat, dGeo.lon);
 
   const bounds = new maplibregl.LngLatBounds();
-  bounds.extend([oGeo.lon, oGeo.lat]);
-  bounds.extend([dGeo.lon, dGeo.lat]);
+  if (hasOrigin) bounds.extend([oGeo.lon, oGeo.lat]);
+  if (hasDestination) bounds.extend([dGeo.lon, dGeo.lat]);
 
   if (currentTrip.checkins) {
     currentTrip.checkins.forEach(chk => {
-      bounds.extend([chk.lng, chk.lat]);
+      if (GPISSIGps.isValidCoordinate(chk.lat, chk.lng)) bounds.extend([chk.lng, chk.lat]);
     });
   }
 
-  map.fitBounds(bounds, { padding: 60, maxZoom: 14 });
+  if (!bounds.isEmpty()) map.fitBounds(bounds, { padding: 60, maxZoom: 14 });
 }
 
 function setupEventListeners(tripId) {
@@ -640,7 +718,7 @@ function setupEventListeners(tripId) {
         return;
       }
       userAuthPin = pin;
-      loadTripData(tripId);
+      loadTripData(tripId, false, shareToken);
     });
   }
 

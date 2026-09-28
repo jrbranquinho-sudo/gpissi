@@ -42,6 +42,10 @@
   padding: 0;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 body {
   background-color: var(--bg-primary);
   background-image: 
@@ -496,6 +500,209 @@ textarea.form-control {
   accent-color: var(--issi-orange);
   width: 18px;
   height: 18px;
+}
+
+.companion-members {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.5rem;
+  margin: 0.65rem 0;
+}
+
+.companion-member {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  cursor: pointer;
+}
+
+.companion-member input {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  accent-color: var(--issi-orange);
+}
+
+.companion-member span {
+  overflow-wrap: anywhere;
+}
+
+.security-challenge {
+  margin-top: 1rem;
+  padding: 1.1rem;
+  border: 1px solid var(--issi-orange);
+  border-radius: var(--radius-md);
+  background: #10131a;
+}
+
+.security-challenge-title {
+  margin-bottom: 0.45rem;
+  color: var(--issi-orange-bright);
+  font-family: var(--font-heading);
+  font-size: 1.1rem;
+  font-weight: 800;
+  text-align: center;
+}
+
+.security-challenge > p {
+  margin-bottom: 0.8rem;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+.security-challenge-image {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 0.9rem;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  background: #070809;
+}
+
+.security-challenge-image img {
+  display: block;
+  width: min(100%, 380px);
+  height: 66px;
+  object-fit: contain;
+}
+
+.security-challenge > label {
+  display: block;
+  margin-bottom: 0.4rem;
+  color: #cbd5e1;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.security-challenge-input {
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: 0.35em;
+  font-weight: 800;
+}
+
+.security-challenge-actions {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 0.5rem;
+  margin-top: 0.85rem;
+}
+
+.security-challenge-actions button {
+  min-width: 0;
+  padding: 0.65rem 0.8rem;
+}
+
+.security-challenge-actions .btn-secondary {
+  color: var(--text-main);
+  border: 1px solid #39332f;
+  background: #211d1b;
+}
+
+.security-challenge-actions .btn-secondary:hover {
+  border-color: var(--issi-orange);
+  background: #2a211b;
+}
+
+.account-companions {
+  margin-top: 1.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.account-companions > p {
+  margin-bottom: 0.85rem;
+  color: var(--text-muted);
+}
+
+.account-companions-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.account-companion-row {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.4rem;
+  padding: 0.85rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+}
+
+.account-companion-row strong {
+  color: var(--issi-orange-bright);
+}
+
+.account-companion-row label {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.location-history {
+  margin-top: 0.85rem;
+  padding-top: 0.7rem;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.location-history > strong {
+  color: var(--text-muted);
+  font-family: var(--font-sub);
+  font-size: 0.82rem;
+}
+
+.location-history ol {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0.45rem 0 0;
+  padding-left: 1.35rem;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
+.location-history li {
+  padding-left: 0.15rem;
+  overflow-wrap: anywhere;
+}
+
+.location-history .location-passage {
+  color: var(--accent-green);
+  font-weight: 700;
+}
+
+#companionsMessage {
+  display: block;
+  margin-top: 0.7rem;
+  font-size: 0.88rem;
+}
+
+@media (max-width: 620px) {
+  .account-companions-fields {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 480px) {
+  .security-challenge {
+    padding: 0.8rem;
+  }
+
+  .security-challenge-actions {
+    grid-template-columns: 1fr auto;
+  }
+
+  .security-challenge-actions button[type="submit"] {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
 }
 
 /* PIN BOX */

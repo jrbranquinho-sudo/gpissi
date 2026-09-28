@@ -12,7 +12,18 @@ O **GPISSI** (Gestão de Protocolo de Itinerário de Segurança do Insanos MC) �
 - 📊 **Dashboard (Página Inicial)**: [https://gpissi.vercel.app/](https://gpissi.vercel.app/)
 - 📝 **Novo Protocolo de Viagem**: [https://gpissi.vercel.app/novo](https://gpissi.vercel.app/novo)
 - 📡 **Radar ao Vivo**: [https://gpissi.vercel.app/radar](https://gpissi.vercel.app/radar)
+- 🔐 **Conta e autenticação**: [https://gpissi.vercel.app/conta](https://gpissi.vercel.app/conta)
 - 💻 **Ambiente Local**: `http://localhost:3000`
+
+### 🗄️ Banco, contas e implantação
+
+- Viagens, perfis e desafios de segurança são persistidos em Turso/libSQL. O SQLite local é usado apenas para desenvolvimento; em produção, configure `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN` e `SESSION_SECRET` nas variáveis de ambiente da Vercel.
+- Gere `SESSION_SECRET` com pelo menos 32 bytes aleatórios. Nunca reutilize o valor de `.env.example` em produção.
+- O cadastro exige nome, nome de colete, celular, grau, função, e-mail e senha de pelo menos 12 caracteres. Cadastro e login usam uma verificação visual com sequência aleatória de seis letras, gerada e validada no backend; cada sequência expira em cinco minutos, só pode ser usada uma vez e é substituída após uma resposta incorreta.
+- Depois de criar a base Turso e definir as três variáveis, o schema é criado automaticamente na primeira requisição. A importação de `data/viagens.json` ocorre uma vez quando a tabela de viagens está vazia.
+- A sequência visual é uma verificação de segurança no mesmo dispositivo, não um segundo fator independente como um código enviado a outro dispositivo.
+- Para desenvolvimento, defina `SESSION_SECRET` e, opcionalmente, `TURSO_DATABASE_URL`/`TURSO_AUTH_TOKEN` para usar Turso; sem URL Turso, a aplicação usa o SQLite local. Execute `npm start` e rode `npm test` para verificar as regras de estimativa e sequência visual.
+- A previsão usa média de 110 km/h para motos e carros, 80 km/h para ônibus e inclui uma parada de 20 minutos somente em trajetos acima de 220 km.
 
 ---
 
