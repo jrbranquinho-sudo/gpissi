@@ -543,7 +543,8 @@ app.post('/api/auth/logout', (req, res) => {
 
 app.get('/api/members', requireAccount, async (req, res) => {
   const members = await storage.listMembers();
-  const ownContacts = (req.user.profile.acompanhantes || []).map(contact => ({
+  const companions = await storage.listOwnedContacts('companions', req.user.id);
+  const ownContacts = companions.map(contact => ({
     id: contact.id,
     kind: 'contact',
     nome: contact.nome.trim().split(/\s+/)[0],
@@ -552,12 +553,12 @@ app.get('/api/members', requireAccount, async (req, res) => {
   res.json([...members.filter(member => member.id !== req.user.id), ...ownContacts]);
 });
 
-app.get('/api/account/companions', requireAccount, (req, res) => {
-  res.json(req.user.profile.acompanhantes || []);
+app.get('/api/account/companions', requireAccount, async (req, res) => {
+  res.json(await storage.listOwnedContacts('companions', req.user.id));
 });
 
-app.get('/api/account/emergency-contacts', requireAccount, (req, res) => {
-  res.json(req.user.profile.contatos_emergencia || []);
+app.get('/api/account/emergency-contacts', requireAccount, async (req, res) => {
+  res.json(await storage.listOwnedContacts('emergency_contacts', req.user.id));
 });
 
 app.put('/api/account/companions', requireAccount, async (req, res) => {
@@ -584,9 +585,8 @@ app.put('/api/account/companions', requireAccount, async (req, res) => {
     });
   }
 
-  const profile = { ...req.user.profile, acompanhantes: companions };
-  await storage.updateUserProfile(req.user.id, profile);
-  res.json({ success: true, companions });
+  await storage.replaceOwnedContacts('companions', req.user.id, companions);
+  res.json({ success: true, companions: await storage.listOwnedContacts('companions', req.user.id) });
 });
 
 app.put('/api/account/emergency-contacts', requireAccount, async (req, res) => {
@@ -613,9 +613,34 @@ app.put('/api/account/emergency-contacts', requireAccount, async (req, res) => {
     });
   }
 
-  const profile = { ...req.user.profile, contatos_emergencia: contacts };
-  await storage.updateUserProfile(req.user.id, profile);
-  res.json({ success: true, contacts });
+  await storage.replaceOwnedContacts('emergency_contacts', req.user.id, contacts);
+  res.json({ success: true, contacts: await storage.listOwnedContacts('emergency_contacts', req.user.id) });
+});
+
+app.get('/api/account/vehicles', requireAccount, async (req, res) => {
+  res.json(await storage.listUserVehicles(req.user.id));
+});
+
+app.put('/api/account/vehicles', requireAccount, async (req, res) => {
+  const input = req.body.vehicle || {};
+  const vehicle = {
+    id: typeof input.id === 'string' && /^[a-f0-9-]{36}$/i.test(input.id) ? input.id : crypto.randomUUID(),
+    tipo: ['MOTO', 'CARRO', 'ÔNIBUS', 'OUTRO'].includes(input.tipo) ? input.tipo : 'MOTO',
+    placa: sanitizeString(input.placa, 12).replace(/[^a-z0-9]/gi, '').toUpperCase(),
+    marca: sanitizeString(input.marca, 60),
+    modelo: sanitizeString(input.modelo, 80),
+    detalhes: sanitizeString(input.detalhes, 160)
+  };
+  if (!vehicle.placa && !vehicle.marca && !vehicle.modelo && !vehicle.detalhes) {
+    return res.status(400).json({ error: 'Informe algum dado do veículo antes de salvar.' });
+  }
+  const saved = await storage.saveUserVehicle(req.user.id, vehicle);
+  res.json({ success: true, vehicle: saved, vehicles: await storage.listUserVehicles(req.user.id) });
+});
+
+app.delete('/api/account/vehicles/:id', requireAccount, async (req, res) => {
+  await storage.deleteUserVehicle(req.user.id, req.params.id);
+  res.json({ success: true, vehicles: await storage.listUserVehicles(req.user.id) });
 });
 
 app.get('/api/minhas-viagens', requireAccount, async (req, res) => {
@@ -873,7 +898,7 @@ app.post('/api/viagens', createTripLimiter, requireAccount, async (req, res) => 
       return res.status(400).json({ error: 'Remova os acompanhantes ou habilite a opção de viagem acompanhada.' });
     }
     const members = companionIds.length ? await storage.listMembers() : [];
-    const ownContacts = req.user.profile.acompanhantes || [];
+    const ownContacts = await storage.listOwnedContacts('companions', req.user.id);
     const availableCompanions = [
       ...members.filter(member => member.id !== req.user.id),
       ...ownContacts.map(contact => ({
@@ -911,7 +936,8 @@ app.post('/api/viagens', createTripLimiter, requireAccount, async (req, res) => 
     }
 
     const emergencyContactId = sanitizeString(req.body.emergency_contact_id, 50);
-    const emergencyContact = (req.user.profile.contatos_emergencia || []).find(contact => contact.id === emergencyContactId);
+    const emergencyContact = (await storage.listOwnedContacts('emergency_contacts', req.user.id))
+      .find(contact => contact.id === emergencyContactId);
     if (!emergencyContact) {
       return res.status(400).json({ error: 'Selecione um contato de emergência cadastrado na sua conta.' });
     }
@@ -927,6 +953,17 @@ app.post('/api/viagens', createTripLimiter, requireAccount, async (req, res) => 
         parts.push(`${cleanTransporteMarca} ${cleanTransporteModelo}`.trim());
       }
       if (parts.length > 0) vDetalhe = parts.join(' | ');
+    }
+
+    if (cleanTransportePlaca || cleanTransporteMarca || cleanTransporteModelo || vDetalhe) {
+      await storage.saveUserVehicle(req.user.id, {
+        id: crypto.randomUUID(),
+        tipo: cleanTransporteTipo,
+        placa: cleanTransportePlaca.replace(/[^A-Z0-9]/g, ''),
+        marca: cleanTransporteMarca,
+        modelo: cleanTransporteModelo,
+        detalhes: sanitizeString(vDetalhe, 160)
+      });
     }
 
     const novaViagem = {

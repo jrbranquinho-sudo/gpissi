@@ -269,6 +269,34 @@ document.getElementById('emergencyContactsForm').addEventListener('submit', asyn
   }
 });
 
+function renderVehicles(vehicles = []) {
+  const container = document.getElementById('accountVehiclesList');
+  container.replaceChildren();
+  if (vehicles.length === 0) {
+    container.textContent = 'Nenhum veículo salvo. Os dados serão adicionados quando você preencher um protocolo.';
+    return;
+  }
+  vehicles.forEach(vehicle => {
+    const row = document.createElement('div');
+    row.className = 'account-vehicle-item';
+    const description = document.createElement('span');
+    const parts = [vehicle.tipo, vehicle.placa, vehicle.marca, vehicle.modelo, vehicle.detalhes].filter(Boolean);
+    description.textContent = parts.join(' · ');
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'btn-secondary account-vehicle-delete';
+    remove.textContent = 'Excluir';
+    remove.setAttribute('aria-label', `Excluir veículo ${vehicle.placa || vehicle.modelo || ''}`);
+    remove.addEventListener('click', async () => {
+      const response = await fetch(`/api/account/vehicles/${encodeURIComponent(vehicle.id)}`, { method: 'DELETE' });
+      const result = await response.json();
+      if (response.ok) renderVehicles(result.vehicles);
+    });
+    row.append(description, remove);
+    container.append(row);
+  });
+}
+
 fetch('/api/auth/me').then(async response => {
   if (!response.ok) return;
   const result = await response.json();
@@ -283,6 +311,9 @@ fetch('/api/auth/me').then(async response => {
   const emergencyResponse = await fetch('/api/account/emergency-contacts');
   const emergencyContacts = await emergencyResponse.json();
   renderEmergencyContactInputs(emergencyResponse.ok ? emergencyContacts : []);
+  const vehiclesResponse = await fetch('/api/account/vehicles');
+  const vehicles = await vehiclesResponse.json();
+  renderVehicles(vehiclesResponse.ok ? vehicles : []);
   const tripsResponse = await fetch('/api/minhas-viagens');
   const trips = await tripsResponse.json();
   const tripsList = document.getElementById('myTripsList');

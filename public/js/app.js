@@ -2,6 +2,8 @@
 
 let veiculosData = { MOTO: { marcas: [], modelosPorMarca: {} }, CARRO: { marcas: [], modelosPorMarca: {} } };
 let currentVehicleType = 'MOTO';
+let vehicleDraftId = crypto.randomUUID();
+let vehicleSaveTimer = null;
 
 document.addEventListener('DOMContentLoaded', () => {
   setupDates();
@@ -241,6 +243,7 @@ async function setupVehicleCatalog() {
     const selectedOption = marcaSelect.selectedOptions[0];
     if (!selectedOption || !selectedOption.dataset.id) {
       modelosDatalist.innerHTML = '';
+      scheduleVehicleSave();
       return;
     }
 
@@ -252,6 +255,7 @@ async function setupVehicleCatalog() {
     modeloInput.placeholder = modelos.length > 0 
       ? `Escolha entre os ${modelos.length} modelos ou digite` 
       : 'Digite o modelo';
+    scheduleVehicleSave();
   });
 
   // Radio selection buttons
@@ -272,6 +276,7 @@ async function setupVehicleCatalog() {
 
       currentVehicleType = radio.value;
       triggerRouteCalculation();
+      scheduleVehicleSave();
 
       if (radio.value === 'ÔNIBUS') {
         motoCarroBox.style.display = 'none';
@@ -283,6 +288,95 @@ async function setupVehicleCatalog() {
       }
     });
   });
+
+  document.getElementById('transporte_placa').addEventListener('input', scheduleVehicleSave);
+  modeloInput.addEventListener('input', scheduleVehicleSave);
+  document.getElementById('transporte_detalhe').addEventListener('input', scheduleVehicleSave);
+
+  const savedVehicleSelect = document.getElementById('saved_vehicle_id');
+  const saveStatus = document.getElementById('vehicleSaveStatus');
+  const savedVehiclesResponse = await fetch('/api/account/vehicles');
+  const savedVehicles = savedVehiclesResponse.ok ? await savedVehiclesResponse.json() : [];
+  populateSavedVehicleOptions(savedVehicles);
+
+  savedVehicleSelect.addEventListener('change', () => {
+    const vehicle = savedVehicles.find(item => item.id === savedVehicleSelect.value);
+    if (!vehicle) {
+      vehicleDraftId = crypto.randomUUID();
+      document.getElementById('transporte_placa').value = '';
+      marcaSelect.value = '';
+      modeloInput.value = '';
+      document.getElementById('transporte_detalhe').value = '';
+      return;
+    }
+    vehicleDraftId = vehicle.id;
+    const radio = [...transportRadios].find(input => input.value === vehicle.tipo);
+    if (radio) {
+      radio.checked = true;
+      radio.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    document.getElementById('transporte_placa').value = formatPlate(vehicle.placa || '');
+    if (vehicle.tipo === 'ÔNIBUS') {
+      document.getElementById('transporte_detalhe').value = vehicle.detalhes || '';
+    } else {
+      let brandOption = [...marcaSelect.options].find(option => option.value === vehicle.marca);
+      if (!brandOption && vehicle.marca) {
+        brandOption = new Option(vehicle.marca, vehicle.marca);
+        marcaSelect.add(brandOption);
+      }
+      if (brandOption) marcaSelect.value = brandOption.value;
+      marcaSelect.dispatchEvent(new Event('change'));
+      modeloInput.value = vehicle.modelo || '';
+    }
+  });
+
+  function formatPlate(plate) {
+    const clean = String(plate || '').replace(/[^a-z0-9]/gi, '').toUpperCase();
+    return clean.length > 3 ? `${clean.slice(0, 3)}-${clean.slice(3)}` : clean;
+  }
+
+  function populateSavedVehicleOptions(vehicles) {
+    savedVehicleSelect.replaceChildren(new Option('Novo veículo...', ''));
+    vehicles.forEach(vehicle => {
+      const label = [vehicle.tipo, vehicle.placa, vehicle.marca, vehicle.modelo, vehicle.detalhes].filter(Boolean).join(' · ');
+      savedVehicleSelect.add(new Option(label, vehicle.id));
+    });
+  }
+
+  function scheduleVehicleSave() {
+    clearTimeout(vehicleSaveTimer);
+    vehicleSaveTimer = setTimeout(async () => {
+      const plate = document.getElementById('transporte_placa').value.trim();
+      const brand = marcaSelect.value.trim();
+      const model = modeloInput.value.trim();
+      const details = document.getElementById('transporte_detalhe').value.trim();
+      if (!plate && !brand && !model && !details) return;
+      saveStatus.textContent = 'Salvando veículo...';
+      try {
+        const response = await fetch('/api/account/vehicles', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ vehicle: {
+            id: vehicleDraftId,
+            tipo: currentVehicleType,
+            placa: plate,
+            marca: brand,
+            modelo: model,
+            detalhes: details
+          } })
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'Falha ao salvar veículo');
+        vehicleDraftId = result.vehicle.id;
+        const selectedId = savedVehicleSelect.value;
+        populateSavedVehicleOptions(result.vehicles);
+        savedVehicleSelect.value = selectedId || vehicleDraftId;
+        saveStatus.textContent = 'Veículo salvo na sua conta.';
+      } catch (error) {
+        saveStatus.textContent = error.message;
+      }
+    }, 800);
+  }
 }
 
 // 7. COMPANION TOGGLE

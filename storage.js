@@ -43,6 +43,37 @@ function initializeStorage() {
           expires_at TEXT NOT NULL,
           created_at TEXT NOT NULL
         )`,
+        `CREATE TABLE IF NOT EXISTS companions (
+          id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL,
+          name TEXT NOT NULL,
+          phone TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          UNIQUE (user_id, id)
+        )`,
+        `CREATE INDEX IF NOT EXISTS companions_owner ON companions(user_id, created_at)`,
+        `CREATE TABLE IF NOT EXISTS emergency_contacts (
+          id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL,
+          name TEXT NOT NULL,
+          phone TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          UNIQUE (user_id, id)
+        )`,
+        `CREATE INDEX IF NOT EXISTS emergency_contacts_owner ON emergency_contacts(user_id, created_at)`,
+        `CREATE TABLE IF NOT EXISTS vehicles (
+          id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL,
+          vehicle_type TEXT NOT NULL,
+          plate TEXT,
+          brand TEXT NOT NULL DEFAULT '',
+          model TEXT NOT NULL DEFAULT '',
+          details TEXT NOT NULL DEFAULT '',
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          UNIQUE (user_id, plate)
+        )`,
+        `CREATE INDEX IF NOT EXISTS vehicles_owner ON vehicles(user_id, updated_at DESC)`,
         'CREATE INDEX IF NOT EXISTS trips_owner_created ON trips(owner_user_id, created_at DESC)'
       ], 'write');
 
@@ -51,6 +82,8 @@ function initializeStorage() {
       if (!knownColumns.has('email_otp_hash')) await client.execute('ALTER TABLE users ADD COLUMN email_otp_hash TEXT');
       if (!knownColumns.has('email_otp_expires_at')) await client.execute('ALTER TABLE users ADD COLUMN email_otp_expires_at TEXT');
       if (!knownColumns.has('email_verified')) await client.execute('ALTER TABLE users ADD COLUMN email_verified INTEGER NOT NULL DEFAULT 0');
+
+      await migrateProfileContacts();
 
       const count = await client.execute('SELECT COUNT(*) AS total FROM trips');
       if (Number(count.rows[0].total) === 0) {
@@ -88,11 +121,122 @@ async function createUser(user) {
   });
 }
 
-async function updateUserProfile(userId, profile) {
-  await client.execute({
-    sql: 'UPDATE users SET profile = ? WHERE id = ?',
-    args: [JSON.stringify(profile), userId]
+async function migrateProfileContacts() {
+  const result = await client.execute('SELECT id, profile FROM users');
+  for (const row of result.rows) {
+    let profile;
+    try {
+      profile = JSON.parse(row.profile);
+    } catch (_) {
+      continue;
+    }
+    const statements = [];
+    for (const contact of profile.acompanhantes || []) {
+      if (!contact || !contact.id || !contact.nome || !contact.telefone) continue;
+      statements.push({
+        sql: 'INSERT OR IGNORE INTO companions (id, user_id, name, phone, created_at) VALUES (?, ?, ?, ?, ?)',
+        args: [contact.id, row.id, contact.nome, contact.telefone, new Date().toISOString()]
+      });
+    }
+    for (const contact of profile.contatos_emergencia || []) {
+      if (!contact || !contact.id || !contact.nome || !contact.telefone) continue;
+      statements.push({
+        sql: 'INSERT OR IGNORE INTO emergency_contacts (id, user_id, name, phone, created_at) VALUES (?, ?, ?, ?, ?)',
+        args: [contact.id, row.id, contact.nome, contact.telefone, new Date().toISOString()]
+      });
+    }
+    if (statements.length) await client.batch(statements, 'write');
+    if (profile.acompanhantes || profile.contatos_emergencia) {
+      delete profile.acompanhantes;
+      delete profile.contatos_emergencia;
+      await client.execute({ sql: 'UPDATE users SET profile = ? WHERE id = ?', args: [JSON.stringify(profile), row.id] });
+    }
+  }
+}
+
+async function listOwnedContacts(table, userId) {
+  if (!['companions', 'emergency_contacts'].includes(table)) throw new Error('Unsupported contact table');
+  const result = await client.execute({
+    sql: `SELECT id, name AS nome, phone AS telefone FROM ${table} WHERE user_id = ? ORDER BY created_at, name`,
+    args: [userId]
   });
+  return result.rows;
+}
+
+async function replaceOwnedContacts(table, userId, contacts) {
+  if (!['companions', 'emergency_contacts'].includes(table)) throw new Error('Unsupported contact table');
+  const now = new Date().toISOString();
+  const statements = [
+    { sql: `DELETE FROM ${table} WHERE user_id = ?`, args: [userId] },
+    ...contacts.map(contact => ({
+      sql: `INSERT INTO ${table} (id, user_id, name, phone, created_at) VALUES (?, ?, ?, ?, ?)`,
+      args: [contact.id, userId, contact.nome, contact.telefone, now]
+    }))
+  ];
+  await client.batch(statements, 'write');
+  return contacts;
+}
+
+async function listUserVehicles(userId) {
+  const result = await client.execute({
+    sql: `SELECT id, vehicle_type AS tipo, plate AS placa, brand AS marca, model AS modelo,
+      details AS detalhes, created_at, updated_at FROM vehicles WHERE user_id = ? ORDER BY updated_at DESC`,
+    args: [userId]
+  });
+  return result.rows;
+}
+
+async function saveUserVehicle(userId, vehicle) {
+  const now = new Date().toISOString();
+  const plate = vehicle.placa || null;
+  const updateVehicle = async id => client.execute({
+    sql: `UPDATE vehicles SET vehicle_type = ?, plate = ?, brand = ?, model = ?, details = ?, updated_at = ?
+      WHERE user_id = ? AND id = ?`,
+    args: [vehicle.tipo, plate, vehicle.marca, vehicle.modelo, vehicle.detalhes, now, userId, id]
+  });
+
+  let targetId = vehicle.id;
+  if (plate) {
+    const samePlate = await client.execute({
+      sql: 'SELECT id FROM vehicles WHERE user_id = ? AND plate = ?',
+      args: [userId, plate]
+    });
+    if (samePlate.rows[0] && samePlate.rows[0].id !== vehicle.id) {
+      const draft = await client.execute({
+        sql: 'SELECT id FROM vehicles WHERE user_id = ? AND id = ?',
+        args: [userId, vehicle.id]
+      });
+      if (draft.rows[0]) {
+        await client.execute({ sql: 'DELETE FROM vehicles WHERE user_id = ? AND id = ?', args: [userId, vehicle.id] });
+      }
+      targetId = samePlate.rows[0].id;
+    }
+  }
+
+  const existing = await client.execute({
+    sql: 'SELECT id FROM vehicles WHERE user_id = ? AND id = ?',
+    args: [userId, targetId]
+  });
+  if (existing.rows[0]) {
+    await updateVehicle(targetId);
+  } else {
+    await client.execute({
+      sql: `INSERT INTO vehicles (id, user_id, vehicle_type, plate, brand, model, details, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: [targetId, userId, vehicle.tipo, plate, vehicle.marca, vehicle.modelo, vehicle.detalhes, now, now]
+    });
+  }
+
+  const result = await client.execute({
+    sql: `SELECT id, vehicle_type AS tipo, plate AS placa, brand AS marca, model AS modelo,
+      details AS detalhes, created_at, updated_at FROM vehicles WHERE user_id = ? AND id = ?`,
+    args: [userId, targetId]
+  });
+  return result.rows[0];
+}
+
+async function deleteUserVehicle(userId, vehicleId) {
+  await client.execute({ sql: 'DELETE FROM vehicles WHERE user_id = ? AND id = ?', args: [userId, vehicleId] });
 }
 
 async function saveChallenge(challenge) {
@@ -125,13 +269,6 @@ async function listMembers() {
       grau: profile.funcao_grau || [profile.grau, profile.funcao].filter(Boolean).join(' - '),
       funcao: profile.funcao || ''
     };
-  });
-}
-
-async function updateUserProfile(userId, profile) {
-  await client.execute({
-    sql: 'UPDATE users SET profile = ? WHERE id = ?',
-    args: [JSON.stringify(profile), userId]
   });
 }
 
@@ -175,12 +312,15 @@ module.exports = {
   findUserByEmail,
   findUserById,
   createUser,
-  updateUserProfile,
   saveChallenge,
   findChallenge,
   consumeChallenge,
   listMembers,
-  updateUserProfile,
+  listOwnedContacts,
+  replaceOwnedContacts,
+  listUserVehicles,
+  saveUserVehicle,
+  deleteUserVehicle,
   listTrips,
   listUserTrips,
   findTrip,

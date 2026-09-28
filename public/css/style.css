@@ -678,6 +678,24 @@ textarea.form-control {
   font-weight: 700;
 }
 
+.account-vehicle-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.7rem 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.account-vehicle-item > span {
+  overflow-wrap: anywhere;
+}
+
+.account-vehicle-delete {
+  flex: 0 0 auto;
+  padding: 0.35rem 0.6rem;
+}
+
 #companionsMessage {
   display: block;
   margin-top: 0.7rem;
@@ -1417,11 +1435,17 @@ textarea.form-control {
   }
   .nav-links {
     width: 100%;
-    justify-content: space-between;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    gap: 0.4rem;
   }
   .nav-btn {
-    flex: 1;
+    flex: 1 1 calc(50% - 0.4rem);
+    min-width: 0;
     justify-content: center;
+    white-space: normal;
+    text-align: center;
+    line-height: 1.2;
   }
   .hero-logo-center {
     width: 75px;

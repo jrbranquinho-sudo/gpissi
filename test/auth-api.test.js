@@ -154,16 +154,17 @@ test('cadastro e login mostram desafio visual e renovam sequência incorreta', a
   }, cookie);
   assert.equal(savedCompanions.response.status, 200);
   assert.equal(savedCompanions.body.companions.length, 2);
-  assert.equal(savedCompanions.body.companions[0].telefone, '(64) 9 8765-4321');
+  assert.equal(savedCompanions.body.companions.find(item => item.nome === 'Acompanhante Um').telefone, '(64) 9 8765-4321');
 
   const reloadedCompanions = await fetch(`${baseUrl}/api/account/companions`, { headers: { cookie } });
   assert.equal(reloadedCompanions.status, 200);
-  assert.equal((await reloadedCompanions.json())[1].nome, 'Acompanhante Dois');
+  const companions = await reloadedCompanions.json();
+  assert.ok(companions.some(item => item.nome === 'Acompanhante Dois'));
 
   const selectableContacts = await fetch(`${baseUrl}/api/members`, { headers: { cookie } });
   assert.equal(selectableContacts.status, 200);
   const contacts = await selectableContacts.json();
-  const personalContact = contacts.find(contact => contact.kind === 'contact');
+  const personalContact = contacts.find(contact => contact.kind === 'contact' && contact.telefone === '(64) 9 8765-4321');
   assert.deepEqual({ name: personalContact.nome, phone: personalContact.telefone }, {
     name: 'Acompanhante',
     phone: '(64) 9 8765-4321'
@@ -189,6 +190,36 @@ test('cadastro e login mostram desafio visual e renovam sequência incorreta', a
   const emergencyContacts = await reloadedEmergencyContacts.json();
   assert.equal(emergencyContacts[1].nome, 'Segundo Contato');
 
+  const saveVehicle = await putJson('/api/account/vehicles', {
+    vehicle: { id: crypto.randomUUID(), tipo: 'MOTO', placa: 'ABC-1234', marca: 'Honda', modelo: 'CB 500', detalhes: '' }
+  }, cookie);
+  assert.equal(saveVehicle.response.status, 200);
+  assert.equal(saveVehicle.body.vehicle.placa, 'ABC1234');
+
+  const updateVehicle = await putJson('/api/account/vehicles', {
+    vehicle: { id: crypto.randomUUID(), tipo: 'MOTO', placa: 'ABC-1234', marca: 'Honda', modelo: 'CB 500X', detalhes: '' }
+  }, cookie);
+  assert.equal(updateVehicle.response.status, 200);
+  assert.equal(updateVehicle.body.vehicles.length, 1);
+  assert.equal(updateVehicle.body.vehicles[0].modelo, 'CB 500X');
+
+  const savedVehicles = await fetch(`${baseUrl}/api/account/vehicles`, { headers: { cookie } });
+  assert.equal(savedVehicles.status, 200);
+  assert.equal((await savedVehicles.json())[0].placa, 'ABC1234');
+
+  const vehicleDraftId = crypto.randomUUID();
+  const savedDraft = await putJson('/api/account/vehicles', {
+    vehicle: { id: vehicleDraftId, tipo: 'CARRO', placa: '', marca: 'Honda', modelo: 'Civic', detalhes: '' }
+  }, cookie);
+  assert.equal(savedDraft.response.status, 200);
+  assert.equal(savedDraft.body.vehicle.placa, null);
+  const completedDraft = await putJson('/api/account/vehicles', {
+    vehicle: { id: vehicleDraftId, tipo: 'CARRO', placa: 'GHI-9012', marca: 'Honda', modelo: 'Civic', detalhes: '' }
+  }, cookie);
+  assert.equal(completedDraft.response.status, 200);
+  assert.equal(completedDraft.body.vehicle.id, vehicleDraftId);
+  assert.equal(completedDraft.body.vehicle.placa, 'GHI9012');
+
   const trip = await postJson('/api/viagens', {
     origem: 'Pires do Rio - GO',
     destino: 'Palmelo - GO',
@@ -198,12 +229,18 @@ test('cadastro e login mostram desafio visual e renovam sequência incorreta', a
     nome_colete: 'Teste',
     telefone: '11999999999',
     transporte_tipo: 'MOTO',
+    transporte_placa: 'DEF-5678',
+    transporte_marca: 'Yamaha',
+    transporte_modelo: 'MT-07',
     vai_acompanhado: 'Não',
     emergency_contact_id: emergencyContacts[0].id
   }, { cookie });
   assert.equal(trip.response.status, 201, JSON.stringify(trip.body));
   assert.equal(trip.body.viagem.emergencia_contato, 'Contato de Emergência');
   assert.equal(trip.body.viagem.emergencia_telefone, '(64) 9 1111-2222');
+  const tripVehiclesResponse = await fetch(`${baseUrl}/api/account/vehicles`, { headers: { cookie } });
+  const tripVehicles = await tripVehiclesResponse.json();
+  assert.ok(tripVehicles.some(vehicle => vehicle.placa === 'DEF5678' && vehicle.modelo === 'MT-07'));
 
   const anonymousList = await fetch(`${baseUrl}/api/viagens`);
   assert.equal(anonymousList.status, 401);
