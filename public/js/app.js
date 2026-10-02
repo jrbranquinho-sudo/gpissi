@@ -643,51 +643,9 @@ function buildAndShowModal(viagem) {
   const origin = window.location.origin;
   const publicTrackerUrl = `${origin}/tracker?id=${viagem.id}&share=${encodeURIComponent(viagem.share_token)}`;
 
-  const tTipo = viagem.transporte_tipo || 'MOTO';
-  const vDetalhe = viagem.transporte_detalhe || (viagem.transporte_placa ? `Placa: ${viagem.transporte_placa}` : 'N/A');
-
-  const motoCheck = tTipo === 'MOTO' ? `[X] MOTO (${vDetalhe})` : '[ ] MOTO';
-  const carroCheck = tTipo === 'CARRO' ? `[X] CARRO (${vDetalhe})` : '[ ] CARRO';
-  const busCheck = tTipo === 'ÔNIBUS' ? `[X] ÔNIBUS (${vDetalhe})` : '[ ] ÔNIBUS';
-
-  const formattedMessage = 
-`*GPISSI - PROTOCOLO DE VIAGEM - INSANOS MC*
-🏍️ INSANO NA ESTRADA
-
-📍 INFORMAÇÕES DA ROTA
-Origem: ${viagem.origem}
-Data de Saída: ${formatDateBR(viagem.data_saida)}
-Hora de Saída: ${viagem.hora_saida || 'A definir'}
-Destino: ${viagem.destino}
-Previsão de Chegada: ${viagem.previsao_chegada || 'Conforme condições de tráfego'}
-Data de Retorno: ${formatDateBR(viagem.data_retorno)}
-
-👤 DADOS DO INTEGRANTE
-Nome do Colete: ${viagem.nome_colete}
-Função/Grau: ${viagem.grau}
-Telefone: ${viagem.telefone}
-
-🚌 VEÍCULO
-${motoCheck}
-${carroCheck}
-${busCheck}
-
-👥 ACOMPANHANTE(S)
-Vai acompanhado? ${viagem.vai_acompanhado}
-Quem vai junto? ${viagem.vai_acompanhado === 'Sim' ? (viagem.quem_vai_junto || 'Não informado') : 'Nenhum (Solo)'}
-
-🆘 EMERGÊNCIA
-Contato: ${viagem.emergencia_contato}
-Telefone: ${viagem.emergencia_telefone}
-
-📝 OBSERVAÇÕES E RESUMO
-Notas: ${viagem.observacoes_notas || 'Nenhuma observação informada.'}
-Resumo: ${viagem.observacoes_resumo || 'Sem relato prévio.'}
-
-🔴 STATUS: EM ANDAMENTO (NA ESTRADA)
-🗺️ ACOMPANHE EM TEMPO REAL NO MAPA (GPISSI):
-${publicTrackerUrl}
-*(Ficha válida por até 72h)*`;
+  const formattedMessage = (typeof GPISSIGps !== 'undefined' && GPISSIGps.buildWhatsAppProtocolMessage)
+    ? GPISSIGps.buildWhatsAppProtocolMessage(viagem, publicTrackerUrl)
+    : `*GPISSI - PROTOCOLO DE VIAGEM - INSANOS MC*\n🏍️ INSANO NA ESTRADA\n\n📍 INFORMAÇÕES DA ROTA\nOrigem: ${viagem.origem}\nDestino: ${viagem.destino}\n\n${publicTrackerUrl}`;
 
   const previewBox = document.getElementById('fichaPreview');
   previewBox.textContent = formattedMessage;

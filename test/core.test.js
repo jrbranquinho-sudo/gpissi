@@ -71,3 +71,60 @@ test('registra uma passagem com cidade e horário quando o GPS entra em outro mu
   const repeated = gps.buildGpsCheckin({ lat: -17.326, lng: -48.422, reverseGeocodedCity: 'Palmelo - GO' }, 'Palmelo - GO');
   assert.equal(repeated.tipo, 'gps');
 });
+
+test('validação de corredor de rota aceita cidades do trajeto e rejeita IP de provedor fora da rota (Catalão)', () => {
+  const origemPires = { lat: -17.30138, lon: -48.27868 };
+  const destinoCaldas = { lat: -17.74083, lon: -48.63815 };
+
+  // Palmelo fica no trajeto entre Pires do Rio e Caldas Novas (~10km do eixo)
+  const palmelo = { lat: -17.326, lng: -48.422 };
+  assert.equal(gps.isPointInRouteCorridor(palmelo.lat, palmelo.lng, origemPires, destinoCaldas), true);
+
+  // Catalão fica a ~87km fora do eixo da viagem (localização de IP de provedor)
+  const catalao = { lat: -18.1602, lng: -47.9354 };
+  assert.equal(gps.isPointInRouteCorridor(catalao.lat, catalao.lng, origemPires, destinoCaldas), false);
+});
+
+test('buildWhatsAppProtocolMessage gera a ficha completa com formatação oficial do Insanos MC', () => {
+  const viagemMock = {
+    id: 'INS-AMMH-9638',
+    status: 'EM ANDAMENTO',
+    origem: 'Caldas Novas - GO',
+    data_saida: '2026-09-27',
+    hora_saida: '18:20',
+    destino: 'Pires do Rio - GO',
+    previsao_chegada: '19:27 (69 km | ~1h 7min)',
+    data_retorno: '2026-09-27',
+    nome_colete: 'White',
+    grau: 'EXPANSÃO REGIONAL - V',
+    telefone: '(64) 99262-2700',
+    transporte_tipo: 'CARRO',
+    transporte_placa: 'QTR-7C39',
+    transporte_detalhe: 'Placa: QTR-7C39 | JEEP COMPASS',
+    vai_acompanhado: 'Sim',
+    quem_vai_junto: 'Juliana',
+    emergencia_contato: 'Juliana',
+    emergencia_telefone: '(26) 22700-',
+    observacoes_notas: '',
+    observacoes_resumo: ''
+  };
+
+  const url = 'https://gpissi.vercel.app/tracker?id=INS-AMMH-9638';
+  const msg = gps.buildWhatsAppProtocolMessage(viagemMock, url);
+
+  assert.match(msg, /\*GPISSI - PROTOCOLO DE VIAGEM - INSANOS MC\*/);
+  assert.match(msg, /🏍️ INSANO NA ESTRADA/);
+  assert.match(msg, /Origem: Caldas Novas - GO/);
+  assert.match(msg, /Data de Saída: 27\/09\/2026/);
+  assert.match(msg, /Hora de Saída: 18:20/);
+  assert.match(msg, /Destino: Pires do Rio - GO/);
+  assert.match(msg, /Previsão de Chegada: 19:27 \(69 km \| ~1h 7min\)/);
+  assert.match(msg, /Nome do Colete: White/);
+  assert.match(msg, /Função\/Grau: EXPANSÃO REGIONAL - V/);
+  assert.match(msg, /\[X\] CARRO \(Placa: QTR-7C39 \| JEEP COMPASS\)/);
+  assert.match(msg, /\[ \] MOTO/);
+  assert.match(msg, /Quem vai junto\? Juliana/);
+  assert.match(msg, /🔴 STATUS: EM ANDAMENTO \(NA ESTRADA\)/);
+  assert.match(msg, /https:\/\/gpissi\.vercel\.app\/tracker\?id=INS-AMMH-9638/);
+  assert.match(msg, /\*\(Ficha válida por até 72h\)\*/);
+});

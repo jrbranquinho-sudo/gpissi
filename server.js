@@ -1120,6 +1120,10 @@ app.post('/api/viagens/:id/checkin', checkinLimiter, loadOptionalAccount, async 
       const bLat = parseFloat(item.lat);
       const bLng = parseFloat(item.lng);
       if (gpsUtils.isValidCoordinate(bLat, bLng)) {
+        if (viagem.origem_geo && viagem.destino_geo && !gpsUtils.isPointInRouteCorridor(bLat, bLng, viagem.origem_geo, viagem.destino_geo)) {
+          console.warn(`[Telemetria Batch] Ponto ${bLat}, ${bLng} ignorado: fora do corredor da rota.`);
+          return;
+        }
         viagem.checkins.push({
           timestamp: item.timestamp || new Date().toISOString(),
           lat: bLat,
@@ -1135,6 +1139,22 @@ app.post('/api/viagens/:id/checkin', checkinLimiter, loadOptionalAccount, async 
     const pLng = parseFloat(lng);
     if (!gpsUtils.isValidCoordinate(pLat, pLng)) {
       return res.status(400).json({ error: 'Latitude e Longitude válidas são obrigatórias para check-in.' });
+    }
+
+    // PROTEÇÃO CONTRA IP DE PROVEDOR:
+    // Verifica se o ponto está no corredor geográfico da viagem entre origem e destino
+    if (viagem.origem_geo && viagem.destino_geo) {
+      const inCorridor = gpsUtils.isPointInRouteCorridor(pLat, pLng, viagem.origem_geo, viagem.destino_geo);
+      if (!inCorridor) {
+        console.warn(`[Telemetria] Ponto ${pLat}, ${pLng} ignorado: fora do corredor da rota (${viagem.origem} -> ${viagem.destino}). Provável IP de provedor.`);
+        return res.status(200).json({
+          success: false,
+          ignored: true,
+          message: 'Ponto fora da rota geográfica da viagem (provável IP de provedor descartado).',
+          last_location: viagem.last_location || viagem.checkins[viagem.checkins.length - 1],
+          checkins_count: viagem.checkins.length
+        });
+      }
     }
 
     const passageCity = await reverseGeocodeLocation(pLat, pLng);

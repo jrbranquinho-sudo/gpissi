@@ -233,10 +233,32 @@ function renderTripDetails(trip) {
     });
   }
 
-  // WhatsApp Share Text
-  const trackerShareUrl = window.location.href;
-  const waShareMsg = `*GPISSI - INSANO NA ESTRADA - INSANOS MC*\n👤 Integrante: ${trip.nome_colete} (${trip.grau})\n🛣️ Rota: ${trip.origem} ➔ ${trip.destino}\n🚦 Status: ${trip.status}\n\n📍 *Acompanhe em tempo real no mapa OpenFreeMap:*\n${trackerShareUrl}`;
-  document.getElementById('btnShareTrackerWa').href = `https://api.whatsapp.com/send?text=${encodeURIComponent(waShareMsg)}`;
+  // WhatsApp Share Text (Ficha Oficial Completa)
+  const origin = window.location.origin;
+  const shareParam = trip.share_token ? `&share=${encodeURIComponent(trip.share_token)}` : '';
+  const trackerShareUrl = `${origin}/tracker?id=${trip.id}${shareParam}`;
+  const waShareMsg = (typeof GPISSIGps !== 'undefined' && GPISSIGps.buildWhatsAppProtocolMessage)
+    ? GPISSIGps.buildWhatsAppProtocolMessage(trip, trackerShareUrl)
+    : `*GPISSI - PROTOCOLO DE VIAGEM - INSANOS MC*\n🏍️ INSANO NA ESTRADA\n\n📍 INFORMAÇÕES DA ROTA\nOrigem: ${trip.origem}\nDestino: ${trip.destino}\n\n${trackerShareUrl}`;
+  
+  const waBtn = document.getElementById('btnShareTrackerWa');
+  if (waBtn) {
+    waBtn.href = `https://api.whatsapp.com/send?text=${encodeURIComponent(waShareMsg)}`;
+  }
+
+  const copyFichaBtn = document.getElementById('btnCopyTrackerFicha');
+  if (copyFichaBtn) {
+    copyFichaBtn.onclick = async () => {
+      try {
+        await navigator.clipboard.writeText(waShareMsg);
+        const prevText = copyFichaBtn.innerHTML;
+        copyFichaBtn.innerHTML = '<span>✓ Ficha Copiada!</span>';
+        setTimeout(() => { copyFichaBtn.innerHTML = prevText; }, 2500);
+      } catch (e) {
+        alert('Texto pronto para cópia.');
+      }
+    };
+  }
 }
 
 function updateExternalMapLinks(trip) {
@@ -305,8 +327,9 @@ function start5MinuteAutoTracking(tripId) {
 
   syncOfflineCheckins(tripId);
 
-  // Capture current position whenever the trip owner opens the tracker.
-  if (currentTrip && currentTrip.status === 'EM ANDAMENTO') {
+  // Não capturar automaticamente IP de provedor em desktop/laptop ao apenas analisar o mapa
+  const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent || '');
+  if (isMobile && currentTrip && currentTrip.status === 'EM ANDAMENTO') {
     transmitGpsLocation(tripId, true);
   }
 
@@ -322,9 +345,11 @@ function start5MinuteAutoTracking(tripId) {
     if (cdEl) cdEl.textContent = `${mins}:${secs}`;
   }, 1000);
 
-  // 5-Minute interval execution
+  // 5-Minute interval execution (somente em dispositivos móveis na estrada)
   autoTrackingInterval = setInterval(() => {
-    transmitGpsLocation(tripId, true);
+    if (isMobile && currentTrip && currentTrip.status === 'EM ANDAMENTO') {
+      transmitGpsLocation(tripId, true);
+    }
   }, TRACK_INTERVAL_SECONDS * 1000);
 }
 
@@ -354,7 +379,38 @@ function transmitGpsLocation(tripId, isAutomatic = false) {
       isSendingGps = true;
       const lat = pos.coords.latitude;
       const lng = pos.coords.longitude;
+      const accuracy = pos.coords.accuracy;
       const timestamp = new Date(pos.timestamp || Date.now()).toISOString();
+
+      // PROTEÇÃO CONTRA IP DE PROVEDOR:
+      // Se a precisão for pior que 1500m, trata-se de geolocalização por IP/rede fixa e não de GPS de satélite
+      if (accuracy && accuracy > 1500) {
+        console.warn(`[GPISSI Telemetria] Ponto descartado por imprecisão (${Math.round(accuracy)}m). Provável IP de provedor.`);
+        isSendingGps = false;
+        if (!isAutomatic && btn) {
+          btn.disabled = false;
+          btn.innerHTML = '<span>📡 Transmitir Ponto no Trajeto Agora</span>';
+          alert(`Sua conexão forneceu uma localização aproximada com margem de erro de ${Math.round(accuracy / 1000)} km (típico de IP do provedor). Para registrar a passagem correta, transmita pelo celular com GPS ativo.`);
+        }
+        return;
+      }
+
+      // Validação de corredor da rota no frontend (origem e destino)
+      if (currentTrip && currentTrip.origem_geo && currentTrip.destino_geo) {
+        const inCorridor = (typeof GPISSIGps !== 'undefined' && GPISSIGps.isPointInRouteCorridor)
+          ? GPISSIGps.isPointInRouteCorridor(lat, lng, currentTrip.origem_geo, currentTrip.destino_geo)
+          : true;
+        if (!inCorridor) {
+          console.warn(`[GPISSI Telemetria] Ponto [${lat}, ${lng}] fora do corredor da rota (${currentTrip.origem} -> ${currentTrip.destino}). Ignorado.`);
+          isSendingGps = false;
+          if (!isAutomatic && btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<span>📡 Transmitir Ponto no Trajeto Agora</span>';
+            alert('A localização detectada está distante da rota oficial planejada (provável IP de provedor fora da rodovia). Ponto não transmitido para manter a rota íntegra.');
+          }
+          return;
+        }
+      }
 
       const pointData = {
         lat,
