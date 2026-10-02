@@ -168,8 +168,14 @@
             <button class="btn-gps-checkin" id="btnTransmitGps">
               <span>📡 Transmitir Ponto no Trajeto Agora</span>
             </button>
+            <button class="btn-primary-insano" id="btnEditTrip" style="background: #1e3a8a; border-color: #3b82f6; width: 100%; padding: 0.75rem 1rem; border-radius: 6px; cursor: pointer; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 0.5rem;">
+              <span>✏️ Editar Dados da Ficha</span>
+            </button>
             <button class="btn-close-trip" id="btnCloseTrip">
               <span>🏁 Encerrar Viagem / Confirmar Chegada</span>
+            </button>
+            <button class="btn-danger-insano" id="btnDeleteTrip" style="background: #7f1d1d; border-color: #ef4444; color: #fff; width: 100%; padding: 0.75rem 1rem; border-radius: 6px; cursor: pointer; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 0.5rem;">
+              <span>🗑️ Apagar Viagem</span>
             </button>
           </div>
 
@@ -292,13 +298,15 @@
           </div>
         </div>
 
-        <!-- SHARE ON WHATSAPP BUTTON -->
-        <a href="#" id="btnShareTrackerWa" target="_blank" class="btn-whatsapp" style="padding: 0.8rem; font-size: 0.95rem; margin-bottom: 0.5rem;">
-          <span>📱 Compartilhar Ficha no WhatsApp</span>
-        </a>
-        <button id="btnCopyTrackerFicha" type="button" class="btn-secondary" style="width: 100%; padding: 0.65rem; font-size: 0.85rem; border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 0.4rem; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.15); color: #e2e8f0;">
-          <span>📋 Copiar Ficha Oficial Completa</span>
-        </button>
+        <!-- SHARE ON WHATSAPP & COPY (DISPONÍVEL APENAS PARA O AUTOR DO PROTOCOLO) -->
+        <div id="creatorShareSection" style="display: none; margin-top: 0.5rem;">
+          <a href="#" id="btnShareTrackerWa" target="_blank" class="btn-whatsapp" style="padding: 0.8rem; font-size: 0.95rem; margin-bottom: 0.5rem;">
+            <span>📱 Compartilhar Ficha no WhatsApp</span>
+          </a>
+          <button id="btnCopyTrackerFicha" type="button" class="btn-secondary" style="width: 100%; padding: 0.65rem; font-size: 0.85rem; border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 0.4rem; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.15); color: #e2e8f0;">
+            <span>📋 Copiar Ficha Oficial Completa</span>
+          </button>
+        </div>
 
       </div>
     </div>
@@ -336,6 +344,117 @@
             Cancelar
           </button>
         </div>
+      </div>
+  </div>
+
+  <!-- MODAL DE EDIÇÃO DA FICHA -->
+  <div class="modal-overlay" id="editTripModal">
+    <div class="modal-container" style="max-width: 620px; max-height: 90vh; overflow-y: auto;">
+      <div class="modal-header">
+        <div class="modal-title" style="color: var(--issi-orange-bright);">
+          <span>✏️</span> Editar Dados do Protocolo
+        </div>
+        <button class="modal-close" id="btnCancelEditModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size: 0.88rem; color: #cbd5e1; margin-bottom: 1rem;">
+          Corrija as informações do protocolo antes de encerrá-lo. As atualizações serão salvas no sistema e na ficha.
+        </p>
+
+        <form id="editTripForm">
+          <div class="form-row" style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 0.75rem;">
+            <div class="form-group">
+              <label for="editOrigem">Origem [Cidade/Estado]:</label>
+              <input type="text" id="editOrigem" class="form-control" required>
+            </div>
+            <div class="form-group">
+              <label for="editDestino">Destino [Cidade/Estado]:</label>
+              <input type="text" id="editDestino" class="form-control" required>
+            </div>
+          </div>
+
+          <div class="form-row" style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 0.75rem;">
+            <div class="form-group">
+              <label for="editDataSaida">Data de Saída:</label>
+              <input type="date" id="editDataSaida" class="form-control" required>
+            </div>
+            <div class="form-group">
+              <label for="editHoraSaida">Hora de Saída:</label>
+              <input type="time" id="editHoraSaida" class="form-control" required>
+            </div>
+          </div>
+
+          <div class="form-row" style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 0.75rem;">
+            <div class="form-group">
+              <label for="editPrevisao">Previsão de Chegada:</label>
+              <input type="text" id="editPrevisao" class="form-control" placeholder="ex: 18:30 (69 km | ~1h)">
+            </div>
+            <div class="form-group">
+              <label for="editDataRetorno">Data de Retorno:</label>
+              <input type="date" id="editDataRetorno" class="form-control">
+            </div>
+          </div>
+
+          <div class="form-row" style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.75rem; margin-bottom: 0.75rem;">
+            <div class="form-group">
+              <label for="editTransporteTipo">Veículo:</label>
+              <select id="editTransporteTipo" class="form-control">
+                <option value="MOTO">MOTO</option>
+                <option value="CARRO">CARRO</option>
+                <option value="ÔNIBUS">ÔNIBUS</option>
+                <option value="OUTRO">OUTRO</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="editTransportePlaca">Placa:</label>
+              <input type="text" id="editTransportePlaca" class="form-control" maxlength="10">
+            </div>
+            <div class="form-group">
+              <label for="editTransporteModelo">Modelo / Marca:</label>
+              <input type="text" id="editTransporteModelo" class="form-control">
+            </div>
+          </div>
+
+          <div class="form-group" style="margin-bottom: 0.75rem;">
+            <label for="editQuemVaiJunto">Acompanhante(s) (Quem vai junto):</label>
+            <input type="text" id="editQuemVaiJunto" class="form-control" placeholder="ex: Juliana Branquinho - esposa, Bianca - neto(a)">
+          </div>
+
+          <div class="form-row" style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 0.75rem;">
+            <div class="form-group">
+              <label for="editEmergenciaContato">Contato de Emergência:</label>
+              <input type="text" id="editEmergenciaContato" class="form-control">
+            </div>
+            <div class="form-group">
+              <label for="editEmergenciaTelefone">Telefone Emergência:</label>
+              <input type="tel" id="editEmergenciaTelefone" class="form-control">
+            </div>
+          </div>
+
+          <div class="form-group" style="margin-bottom: 0.75rem;">
+            <label for="editNotas">Notas de Estrada:</label>
+            <textarea id="editNotas" class="form-control" rows="2"></textarea>
+          </div>
+
+          <div class="form-group" style="margin-bottom: 1rem;">
+            <label for="editResumo">Resumo da Viagem:</label>
+            <textarea id="editResumo" class="form-control" rows="2"></textarea>
+          </div>
+
+          <div id="editPinConfirmBox" style="display: none; margin-bottom: 1rem;">
+            <label for="editPinInput">PIN de Segurança (se em outro dispositivo):</label>
+            <input type="password" id="editPinInput" class="form-control" maxlength="6" placeholder="PIN de 4 dígitos">
+          </div>
+
+          <div style="display: flex; gap: 0.75rem; margin-top: 1rem;">
+            <button type="submit" class="btn-primary-insano" id="btnSaveEditTrip" style="flex: 1; padding: 0.75rem;">
+              Salvar Alterações 💾
+            </button>
+            <button type="button" class="btn-copy" id="btnCancelEditTrip" style="width: auto;">
+              Cancelar
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   </div>

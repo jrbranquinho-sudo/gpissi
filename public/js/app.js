@@ -398,6 +398,20 @@ function setupCompanionToggle() {
             document.getElementById('acompanhantes_contagem').textContent = 'Nenhum acompanhante cadastrado.';
             return;
           }
+          const relPriority = {
+            'esposa': 1,
+            'filho(a)': 2, 'filho': 2, 'filha': 2,
+            'neto(a)': 3, 'neto': 3, 'neta': 3,
+            'sobrinho(a)': 4, 'sobrinho': 4, 'sobrinha': 4,
+            'amigo(a)': 5, 'amigo': 5, 'amiga': 5,
+            'nenhum': 6
+          };
+          members.sort((a, b) => {
+            const prioA = relPriority[(a.relacao || 'nenhum').toLowerCase()] || 99;
+            const prioB = relPriority[(b.relacao || 'nenhum').toLowerCase()] || 99;
+            if (prioA !== prioB) return prioA - prioB;
+            return (a.nome || a.nome_colete || '').localeCompare(b.nome || b.nome_colete || '');
+          });
           members.forEach(member => {
             const label = document.createElement('label');
             label.className = 'companion-member';
@@ -407,7 +421,7 @@ function setupCompanionToggle() {
             checkbox.name = 'companion_option';
             const name = document.createElement('span');
             if (member.kind === 'contact') {
-              const relText = member.relacao && member.relacao !== 'Nenhum' ? ` (${member.relacao})` : '';
+              const relText = member.relacao && member.relacao !== 'Nenhum' ? ` - ${member.relacao.toLowerCase()}` : '';
               name.textContent = `${member.nome}${relText} · ${member.telefone}`;
             } else {
               const role = [member.grau, member.funcao].filter(Boolean).join(' - ');
@@ -442,7 +456,7 @@ async function setupEmergencyContactSelect() {
     select.replaceChildren(new Option('Selecione um contato de emergência...', ''));
     if (!response.ok) throw new Error(contacts.error || 'Entre na conta para carregar os contatos.');
     contacts.forEach(contact => {
-      const relText = contact.relacao && contact.relacao !== 'Nenhum' ? ` (${contact.relacao})` : '';
+      const relText = contact.relacao && contact.relacao !== 'Nenhum' ? ` - ${contact.relacao.toLowerCase()}` : '';
       select.add(new Option(`${contact.nome}${relText} · ${contact.telefone}`, contact.id));
     });
     if (contacts.length === 0) {

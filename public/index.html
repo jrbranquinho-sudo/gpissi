@@ -20,12 +20,20 @@
   <meta name="theme-color" content="#ff6600">
   <meta name="mobile-web-app-capable" content="yes">
   <script>
-    // Abre imediatamente na tela de login se não houver sessão ativa
-    fetch('/api/auth/me').then(res => {
-      if (!res.ok) window.location.replace('/conta');
-    }).catch(() => {
-      window.location.replace('/conta');
-    });
+    // Se o usuário estava na tela de rastreador e deu refresh na URL mascarada (/), restaura o rastreador
+    const activeTrackerId = sessionStorage.getItem('tracker_trip_id');
+    const activeShareToken = sessionStorage.getItem('tracker_share_token');
+    if (sessionStorage.getItem('on_tracker_page') === '1' && activeTrackerId) {
+      const shareQuery = activeShareToken ? `&share=${encodeURIComponent(activeShareToken)}` : '';
+      window.location.replace(`/tracker?id=${encodeURIComponent(activeTrackerId)}${shareQuery}`);
+    } else {
+      // Abre imediatamente na tela de login se não houver sessão ativa
+      fetch('/api/auth/me').then(res => {
+        if (!res.ok) window.location.replace('/conta');
+      }).catch(() => {
+        window.location.replace('/conta');
+      });
+    }
   </script>
   <style>
     /* DASHBOARD SPECIFIC STYLES */

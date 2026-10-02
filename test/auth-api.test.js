@@ -240,7 +240,7 @@ test('cadastro e login mostram desafio visual e renovam sequência incorreta', a
     emergency_contact_id: emergencyContacts[0].id
   }, { cookie });
   assert.equal(trip.response.status, 201, JSON.stringify(trip.body));
-  assert.equal(trip.body.viagem.emergencia_contato, 'Contato de Emergência (Esposa)');
+  assert.equal(trip.body.viagem.emergencia_contato, 'Contato de Emergência - esposa');
   assert.equal(trip.body.viagem.emergencia_telefone, '(64) 9 1111-2222');
   const tripVehiclesResponse = await fetch(`${baseUrl}/api/account/vehicles`, { headers: { cookie } });
   const tripVehicles = await tripVehiclesResponse.json();
@@ -287,6 +287,24 @@ test('cadastro e login mostram desafio visual e renovam sequência incorreta', a
   const repeatedTripResponse = await fetch(`${baseUrl}/api/viagens/${trip.body.id}`, { headers: { cookie } });
   const repeatedTrip = await repeatedTripResponse.json();
   assert.equal(repeatedTrip.checkins.at(-1).tipo, 'gps');
+
+  // Teste de Edição da Viagem antes de encerrar
+  const editTrip = await putJson(`/api/viagens/${trip.body.id}`, {
+    transporte_modelo: 'MT-09',
+    observacoes_notas: 'Viagem editada pelo autor'
+  }, cookie);
+  assert.equal(editTrip.response.status, 200);
+  assert.equal(editTrip.body.viagem.transporte_modelo, 'MT-09');
+  assert.equal(editTrip.body.viagem.observacoes_notas, 'Viagem editada pelo autor');
+
+  // Teste de Exclusão da Viagem pelo autor
+  const deleteTripRes = await fetch(`${baseUrl}/api/viagens/${trip.body.id}`, {
+    method: 'DELETE',
+    headers: { cookie }
+  });
+  assert.equal(deleteTripRes.status, 200);
+  const deletedFetch = await fetch(`${baseUrl}/api/viagens/${trip.body.id}?share=${encodeURIComponent(trip.body.share_token)}`);
+  assert.equal(deletedFetch.status, 404);
 });
 
 test.after(() => new Promise(resolve => {

@@ -23,10 +23,30 @@ let countdownTimer = null;
 
 document.addEventListener('DOMContentLoaded', () => {
   const urlParams = new URLSearchParams(window.location.search);
-  const tripId = urlParams.get('id');
-  const shareToken = urlParams.get('share');
+  let tripId = urlParams.get('id');
+  let shareToken = urlParams.get('share');
   const tokenParam = urlParams.get('token');
   const pinParam = urlParams.get('pin');
+
+  if (tripId) {
+    sessionStorage.setItem('tracker_trip_id', tripId);
+    sessionStorage.setItem('on_tracker_page', '1');
+    if (shareToken) sessionStorage.setItem('tracker_share_token', shareToken);
+  } else {
+    tripId = sessionStorage.getItem('tracker_trip_id');
+    shareToken = sessionStorage.getItem('tracker_share_token');
+  }
+
+  // Mask tracking link in browser address bar to show only base domain
+  try {
+    window.history.replaceState({ tripId, shareToken }, document.title, '/');
+  } catch (e) {}
+
+  document.querySelectorAll('.navbar a').forEach(a => {
+    a.addEventListener('click', () => {
+      sessionStorage.removeItem('on_tracker_page');
+    });
+  });
 
   if (!tripId) {
     alert('Nenhum identificador de viagem fornecido.');
@@ -296,12 +316,30 @@ function updateCreatorPanelUI(trip) {
   const activeActions = document.getElementById('creatorActiveActions');
   const authPrompt = document.getElementById('creatorAuthPrompt');
   const gpsStatusBox = document.getElementById('creatorGpsStatusBox');
+  const creatorShareSection = document.getElementById('creatorShareSection');
+  const btnEditTrip = document.getElementById('btnEditTrip');
+  const btnDeleteTrip = document.getElementById('btnDeleteTrip');
+
+  // Control visibility of WhatsApp share & copy buttons (strictly for creator)
+  if (creatorShareSection) {
+    creatorShareSection.style.display = isCreatorAuth ? 'block' : 'none';
+  }
 
   if (trip.status === 'CONCLUÍDA') {
     activeActions.style.display = 'none';
     authPrompt.style.display = 'none';
     if (gpsStatusBox) gpsStatusBox.style.display = 'none';
     authMsg.innerHTML = '<span style="color: var(--accent-green); font-weight: bold;">✓ Este protocolo de viagem já foi encerrado pelo autor.</span>';
+    // Allow creator to delete even if closed
+    if (isCreatorAuth && btnDeleteTrip) {
+      activeActions.style.display = 'flex';
+      btnDeleteTrip.style.display = 'flex';
+      const btnTransmitGps = document.getElementById('btnTransmitGps');
+      const btnCloseTrip = document.getElementById('btnCloseTrip');
+      if (btnTransmitGps) btnTransmitGps.style.display = 'none';
+      if (btnEditTrip) btnEditTrip.style.display = 'none';
+      if (btnCloseTrip) btnCloseTrip.style.display = 'none';
+    }
     return;
   }
 
@@ -310,9 +348,11 @@ function updateCreatorPanelUI(trip) {
     activeActions.style.display = 'flex';
     authPrompt.style.display = 'none';
     if (gpsStatusBox) gpsStatusBox.style.display = 'block';
+    if (btnEditTrip) btnEditTrip.style.display = 'flex';
+    if (btnDeleteTrip) btnDeleteTrip.style.display = 'flex';
   } else {
-    authMsg.innerHTML = '🔒 <strong>Modo Visitante:</strong> Você está visualizando o rastreamento em tempo real. Apenas o integrante que registrou o protocolo possui autorização para encerrar a viagem.';
-    activeActions.style.display = 'flex';
+    authMsg.innerHTML = '🔒 <strong>Modo Visitante:</strong> Você está visualizando o rastreamento em tempo real. Apenas o integrante que registrou o protocolo possui autorização para gerenciar a viagem.';
+    activeActions.style.display = 'none';
     authPrompt.style.display = 'block';
     if (gpsStatusBox) gpsStatusBox.style.display = 'none';
   }
@@ -850,7 +890,150 @@ function setupEventListeners(tripId) {
   });
 
   const btnTransmitGps = document.getElementById('btnTransmitGps');
-  btnTransmitGps.addEventListener('click', () => {
-    transmitGpsLocation(tripId, false);
-  });
+  if (btnTransmitGps) {
+    btnTransmitGps.addEventListener('click', () => {
+      transmitGpsLocation(tripId, false);
+    });
+  }
+
+  // Delete trip listener
+  const btnDeleteTrip = document.getElementById('btnDeleteTrip');
+  if (btnDeleteTrip) {
+    btnDeleteTrip.addEventListener('click', async () => {
+      const confirmDelete = confirm('⚠️ ATENÇÃO: Tem certeza de que deseja apagar permanentemente esta viagem?\n\nEsta ação excluirá o protocolo e todo o histórico de rastreamento.');
+      if (!confirmDelete) return;
+
+      let pinToSend = userAuthPin;
+      if (!isCreatorAuth && !userAuthToken && !pinToSend) {
+        pinToSend = prompt('Digite seu PIN de segurança para autorizar a exclusão:');
+        if (!pinToSend) return;
+      }
+
+      try {
+        const headers = { 'Content-Type': 'application/json' };
+        if (userAuthToken) headers['x-creator-token'] = userAuthToken;
+        if (pinToSend) headers['x-creator-pin'] = pinToSend;
+
+        const res = await fetch(`/api/viagens/${tripId}`, {
+          method: 'DELETE',
+          headers,
+          body: JSON.stringify({ pin: pinToSend, token: userAuthToken })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Falha ao apagar viagem.');
+
+        stop5MinuteAutoTracking();
+        localStorage.removeItem(`insanos_trip_${tripId}`);
+        sessionStorage.removeItem('tracker_trip_id');
+        sessionStorage.removeItem('on_tracker_page');
+
+        alert('✓ Viagem apagada com sucesso!');
+        window.location.href = '/';
+      } catch (e) {
+        alert('⚠️ ' + e.message);
+      }
+    });
+  }
+
+  // Edit trip listener & modal
+  const btnEditTrip = document.getElementById('btnEditTrip');
+  const editTripModal = document.getElementById('editTripModal');
+  const btnCancelEditModal = document.getElementById('btnCancelEditModal');
+  const btnCancelEditTrip = document.getElementById('btnCancelEditTrip');
+  const editTripForm = document.getElementById('editTripForm');
+  const editPinConfirmBox = document.getElementById('editPinConfirmBox');
+
+  const closeEditModal = () => {
+    if (editTripModal) editTripModal.classList.remove('active');
+  };
+  if (btnCancelEditModal) btnCancelEditModal.addEventListener('click', closeEditModal);
+  if (btnCancelEditTrip) btnCancelEditTrip.addEventListener('click', closeEditModal);
+
+  if (btnEditTrip) {
+    btnEditTrip.addEventListener('click', () => {
+      if (!currentTrip) return;
+      document.getElementById('editOrigem').value = currentTrip.origem || '';
+      document.getElementById('editDestino').value = currentTrip.destino || '';
+      document.getElementById('editDataSaida').value = currentTrip.data_saida || '';
+      document.getElementById('editHoraSaida').value = currentTrip.hora_saida || '';
+      document.getElementById('editPrevisao').value = currentTrip.previsao_chegada || '';
+      document.getElementById('editDataRetorno').value = currentTrip.data_retorno || '';
+
+      const tipoSel = document.getElementById('editTransporteTipo');
+      if (tipoSel) tipoSel.value = currentTrip.transporte_tipo || 'MOTO';
+      document.getElementById('editTransportePlaca').value = currentTrip.transporte_placa || '';
+      document.getElementById('editTransporteModelo').value = [currentTrip.transporte_marca, currentTrip.transporte_modelo].filter(Boolean).join(' ') || '';
+
+      document.getElementById('editQuemVaiJunto').value = currentTrip.quem_vai_junto || '';
+      document.getElementById('editEmergenciaContato').value = currentTrip.emergencia_contato || '';
+      document.getElementById('editEmergenciaTelefone').value = currentTrip.emergencia_telefone || '';
+
+      document.getElementById('editNotas').value = currentTrip.observacoes_notas || '';
+      document.getElementById('editResumo').value = currentTrip.observacoes_resumo || '';
+
+      if (editPinConfirmBox) {
+        editPinConfirmBox.style.display = (!isCreatorAuth && !userAuthPin) ? 'block' : 'none';
+      }
+
+      editTripModal.classList.add('active');
+    });
+  }
+
+  if (editTripForm) {
+    editTripForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const saveBtn = document.getElementById('btnSaveEditTrip');
+      saveBtn.disabled = true;
+      saveBtn.textContent = 'Salvando...';
+
+      let pinToSend = userAuthPin;
+      if (!isCreatorAuth && !userAuthToken) {
+        const inputPin = document.getElementById('editPinInput')?.value.trim();
+        if (inputPin) pinToSend = inputPin;
+      }
+
+      const payload = {
+        origem: document.getElementById('editOrigem').value.trim(),
+        destino: document.getElementById('editDestino').value.trim(),
+        data_saida: document.getElementById('editDataSaida').value,
+        hora_saida: document.getElementById('editHoraSaida').value,
+        previsao_chegada: document.getElementById('editPrevisao').value.trim(),
+        data_retorno: document.getElementById('editDataRetorno').value,
+        transporte_tipo: document.getElementById('editTransporteTipo').value,
+        transporte_placa: document.getElementById('editTransportePlaca').value.trim(),
+        transporte_modelo: document.getElementById('editTransporteModelo').value.trim(),
+        quem_vai_junto: document.getElementById('editQuemVaiJunto').value.trim(),
+        vai_acompanhado: document.getElementById('editQuemVaiJunto').value.trim() ? 'Sim' : 'Não',
+        emergencia_contato: document.getElementById('editEmergenciaContato').value.trim(),
+        emergencia_telefone: document.getElementById('editEmergenciaTelefone').value.trim(),
+        observacoes_notas: document.getElementById('editNotas').value.trim(),
+        observacoes_resumo: document.getElementById('editResumo').value.trim(),
+        pin: pinToSend,
+        token: userAuthToken
+      };
+
+      try {
+        const headers = { 'Content-Type': 'application/json' };
+        if (userAuthToken) headers['x-creator-token'] = userAuthToken;
+        if (pinToSend) headers['x-creator-pin'] = pinToSend;
+
+        const res = await fetch(`/api/viagens/${tripId}`, {
+          method: 'PUT',
+          headers,
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Falha ao atualizar dados da viagem.');
+
+        closeEditModal();
+        alert('✓ Dados da ficha atualizados com sucesso!');
+        loadTripData(tripId);
+      } catch (err) {
+        alert('⚠️ ' + err.message);
+      } finally {
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'Salvar Alterações 💾';
+      }
+    });
+  }
 }

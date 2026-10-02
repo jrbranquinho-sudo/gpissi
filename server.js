@@ -585,6 +585,48 @@ function normalizeRelationship(value) {
   return RELATIONSHIP_MAP[raw.toLowerCase()] || (VALID_RELATIONSHIPS.includes(raw) ? raw : 'Nenhum');
 }
 
+const COMPANION_RELATION_PRIORITY = {
+  'esposa': 1,
+  'filho(a)': 2,
+  'filho': 2,
+  'filha': 2,
+  'neto(a)': 3,
+  'neto': 3,
+  'neta': 3,
+  'sobrinho(a)': 4,
+  'sobrinho': 4,
+  'sobrinha': 4,
+  'amigo(a)': 5,
+  'amigo': 5,
+  'amiga': 5,
+  'nenhum': 6
+};
+
+function sortCompanionsByRelation(companions) {
+  return [...companions].sort((a, b) => {
+    const prioA = COMPANION_RELATION_PRIORITY[(a.relacao || 'nenhum').toLowerCase()] || 99;
+    const prioB = COMPANION_RELATION_PRIORITY[(b.relacao || 'nenhum').toLowerCase()] || 99;
+    if (prioA !== prioB) return prioA - prioB;
+    return (a.nome || a.nome_colete || '').localeCompare(b.nome || b.nome_colete || '');
+  });
+}
+
+function formatCompanionDisplayName(comp) {
+  const name = comp.nome_puro || comp.nome || comp.nome_colete || '';
+  const rel = (comp.relacao || '').trim().toLowerCase();
+  if (rel && rel !== 'nenhum') {
+    return `${name} - ${rel}`;
+  }
+  return name;
+}
+
+function isTripCreator(req, viagem, token, pin) {
+  const tokenValid = Boolean(token && viagem.admin_token && token === viagem.admin_token);
+  const pinValid = Boolean(pin && viagem.creator_pin && String(pin).trim() === String(viagem.creator_pin).trim());
+  const ownerValid = Boolean(req.user && viagem.owner_user_id === req.user.id);
+  return tokenValid || pinValid || ownerValid;
+}
+
 app.put('/api/account/companions', requireAccount, async (req, res) => {
   const submitted = req.body.companions;
   if (!Array.isArray(submitted) || submitted.length > 4) {
@@ -935,7 +977,7 @@ app.post('/api/viagens', createTripLimiter, requireAccount, async (req, res) => 
         const hasRel = contact.relacao && contact.relacao !== 'Nenhum';
         return {
           id: contact.id,
-          nome_colete: hasRel ? `${contact.nome} (${contact.relacao})` : contact.nome,
+          nome_colete: hasRel ? `${contact.nome} - ${contact.relacao.toLowerCase()}` : contact.nome,
           nome_puro: contact.nome,
           relacao: contact.relacao || 'Nenhum',
           grau: hasRel ? contact.relacao : 'Contato',
@@ -944,11 +986,12 @@ app.post('/api/viagens', createTripLimiter, requireAccount, async (req, res) => 
         };
       })
     ];
-    const companions = companionIds.map(memberId => availableCompanions.find(member => member.id === memberId)).filter(Boolean);
-    if (companions.length !== companionIds.length || companions.some(member => member.id === req.user.id)) {
+    const rawCompanions = companionIds.map(memberId => availableCompanions.find(member => member.id === memberId)).filter(Boolean);
+    if (rawCompanions.length !== companionIds.length || rawCompanions.some(member => member.id === req.user.id)) {
       return res.status(400).json({ error: 'Um ou mais acompanhantes não estão cadastrados.' });
     }
-    const cleanQuemVaiJunto = companions.map(member => member.nome_colete).join(', ');
+    const companions = sortCompanionsByRelation(rawCompanions);
+    const cleanQuemVaiJunto = companions.map(formatCompanionDisplayName).join(', ');
     const cleanEmergenciaContato = sanitizeString(emergencia_contato, 80);
     const cleanEmergenciaTelefone = sanitizeString(emergencia_telefone, 25);
     const cleanNotas = sanitizeString(observacoes_notas, 1000);
@@ -1028,7 +1071,7 @@ app.post('/api/viagens', createTripLimiter, requireAccount, async (req, res) => 
       quem_vai_junto: cleanQuemVaiJunto,
       acompanhantes: companions.map(({ id: memberId, nome_colete, grau, funcao }) => ({ id: memberId, nome_colete, grau, funcao })),
       emergencia_contato: emergencyContact.relacao && emergencyContact.relacao !== 'Nenhum'
-        ? `${emergencyContact.nome} (${emergencyContact.relacao})`
+        ? `${emergencyContact.nome} - ${emergencyContact.relacao.toLowerCase()}`
         : emergencyContact.nome,
       emergencia_telefone: emergencyContact.telefone,
       emergency_contact_id: emergencyContact.id,
@@ -1117,6 +1160,130 @@ app.post('/api/viagens/:id/encerrar', pinAuthLimiter, loadOptionalAccount, async
   res.json({
     success: true,
     message: 'Viagem encerrada com sucesso pelo autor do protocolo. A ficha permanecerá visível por 2 horas.',
+    viagem
+  });
+});
+
+// API: Deletar a própria viagem
+app.delete('/api/viagens/:id', pinAuthLimiter, loadOptionalAccount, async (req, res) => {
+  const { id } = req.params;
+  if (!isValidTripId(id)) {
+    return res.status(400).json({ error: 'ID de protocolo inválido.' });
+  }
+
+  const token = req.headers['x-creator-token'] || req.body?.token || req.query.token;
+  const pin = req.headers['x-creator-pin'] || req.body?.pin || req.query.pin;
+
+  const viagem = await storage.findTrip(id);
+  if (!viagem) {
+    return res.status(404).json({ error: 'Protocolo de viagem não encontrado ou já excluído.' });
+  }
+
+  if (!isTripCreator(req, viagem, token, pin)) {
+    return res.status(403).json({
+      error: 'ACESSO NEGADO: Apenas quem registrou o protocolo pode apagar esta viagem.'
+    });
+  }
+
+  await storage.deleteTrip(id);
+
+  res.json({
+    success: true,
+    message: 'Viagem apagada com sucesso.'
+  });
+});
+
+// API: Editar dados da ficha de viagem antes de encerrá-la
+app.put('/api/viagens/:id', pinAuthLimiter, loadOptionalAccount, async (req, res) => {
+  const { id } = req.params;
+  if (!isValidTripId(id)) {
+    return res.status(400).json({ error: 'ID de protocolo inválido.' });
+  }
+
+  const token = req.headers['x-creator-token'] || req.body?.token || req.query.token;
+  const pin = req.headers['x-creator-pin'] || req.body?.pin || req.query.pin;
+
+  let viagem = await storage.findTrip(id);
+  if (!viagem) {
+    return res.status(404).json({ error: 'Protocolo de viagem não encontrado.' });
+  }
+
+  if (viagem.status === 'CONCLUÍDA') {
+    return res.status(400).json({ error: 'Não é possível editar uma viagem que já foi encerrada.' });
+  }
+
+  if (!isTripCreator(req, viagem, token, pin)) {
+    return res.status(403).json({
+      error: 'ACESSO NEGADO: Apenas quem registrou o protocolo pode editar os dados desta viagem.'
+    });
+  }
+
+  const b = req.body || {};
+
+  // Origem
+  if (b.origem && b.origem !== viagem.origem) {
+    const cleanOrigem = sanitizeLocationName(b.origem);
+    const geo = await geocodeLocation(cleanOrigem);
+    if (!geo) return res.status(422).json({ error: 'Não foi possível localizar a nova cidade de origem no mapa.' });
+    viagem.origem = cleanOrigem;
+    viagem.origem_geo = geo;
+  }
+
+  // Destino
+  if (b.destino && b.destino !== viagem.destino) {
+    const cleanDestino = sanitizeLocationName(b.destino);
+    const geo = await geocodeLocation(cleanDestino);
+    if (!geo) return res.status(422).json({ error: 'Não foi possível localizar a nova cidade de destino no mapa.' });
+    viagem.destino = cleanDestino;
+    viagem.destino_geo = geo;
+  }
+
+  // Datas e horários
+  if (b.data_saida) viagem.data_saida = sanitizeString(b.data_saida, 15);
+  if (b.hora_saida) viagem.hora_saida = sanitizeString(b.hora_saida, 10);
+  if (b.previsao_chegada) viagem.previsao_chegada = sanitizeString(b.previsao_chegada, 40);
+  if (b.data_retorno) viagem.data_retorno = sanitizeString(b.data_retorno, 15);
+
+  // Veículo
+  if (b.transporte_tipo) {
+    viagem.transporte_tipo = ['MOTO', 'CARRO', 'ÔNIBUS', 'OUTRO'].includes(b.transporte_tipo) ? b.transporte_tipo : viagem.transporte_tipo;
+  }
+  if (b.transporte_marca !== undefined) viagem.transporte_marca = sanitizeString(b.transporte_marca, 60);
+  if (b.transporte_modelo !== undefined) viagem.transporte_modelo = sanitizeString(b.transporte_modelo, 60);
+  if (b.transporte_placa !== undefined) viagem.transporte_placa = sanitizeString(b.transporte_placa, 12).toUpperCase();
+  if (b.transporte_detalhe !== undefined) {
+    viagem.transporte_detalhe = sanitizeString(b.transporte_detalhe, 160);
+  } else if (b.transporte_placa || b.transporte_marca || b.transporte_modelo) {
+    const parts = [];
+    if (viagem.transporte_placa) parts.push(`Placa: ${viagem.transporte_placa}`);
+    if (viagem.transporte_marca || viagem.transporte_modelo) {
+      parts.push(`${viagem.transporte_marca || ''} ${viagem.transporte_modelo || ''}`.trim());
+    }
+    if (parts.length) viagem.transporte_detalhe = parts.join(' | ');
+  }
+
+  // Acompanhantes
+  if (b.vai_acompanhado !== undefined) {
+    viagem.vai_acompanhado = b.vai_acompanhado === 'Sim' ? 'Sim' : 'Não';
+  }
+  if (b.quem_vai_junto !== undefined) {
+    viagem.quem_vai_junto = sanitizeString(b.quem_vai_junto, 300);
+  }
+
+  // Emergência
+  if (b.emergencia_contato !== undefined) viagem.emergencia_contato = sanitizeString(b.emergencia_contato, 100);
+  if (b.emergencia_telefone !== undefined) viagem.emergencia_telefone = sanitizeString(b.emergencia_telefone, 25);
+
+  // Observações
+  if (b.observacoes_notas !== undefined) viagem.observacoes_notas = sanitizeString(b.observacoes_notas, 1000);
+  if (b.observacoes_resumo !== undefined) viagem.observacoes_resumo = sanitizeString(b.observacoes_resumo, 1000);
+
+  viagem.updated_at = new Date().toISOString();
+  await storage.saveTrip(viagem);
+
+  res.json({
+    success: true,
+    message: 'Dados da viagem atualizados com sucesso.',
     viagem
   });
 });

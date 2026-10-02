@@ -357,11 +357,32 @@ fetch('/api/auth/me').then(async response => {
     return;
   }
   tripsList.replaceChildren(...trips.map(trip => {
-    const item = document.createElement('p');
+    const item = document.createElement('div');
+    item.style.cssText = 'display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem; padding: 0.4rem; background: var(--bg-secondary); border-radius: 4px;';
     const link = document.createElement('a');
     link.href = `/tracker?id=${encodeURIComponent(trip.id)}&share=${encodeURIComponent(trip.share_token)}`;
     link.textContent = `${trip.origem} → ${trip.destino} | ${trip.status} | ${trip.data_saida}`;
-    item.append(link);
+    link.style.flex = '1';
+    const delBtn = document.createElement('button');
+    delBtn.type = 'button';
+    delBtn.className = 'btn-secondary';
+    delBtn.style.cssText = 'padding: 0.25rem 0.6rem; font-size: 0.8rem; color: #ef4444; border-color: rgba(239, 68, 68, 0.4); margin-left: 0.5rem;';
+    delBtn.textContent = 'Apagar';
+    delBtn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      if (!confirm(`Deseja realmente apagar a viagem ${trip.origem} → ${trip.destino}?`)) return;
+      const res = await fetch(`/api/viagens/${encodeURIComponent(trip.id)}`, { method: 'DELETE' });
+      if (res.ok) {
+        item.remove();
+        if (tripsList.children.length === 0) {
+          tripsList.textContent = 'Você ainda não registrou viagens.';
+        }
+      } else {
+        const err = await res.json();
+        alert(err.error || 'Não foi possível apagar a viagem.');
+      }
+    });
+    item.append(link, delBtn);
     return item;
   }));
 }).catch(() => {});
