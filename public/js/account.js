@@ -111,7 +111,7 @@ document.getElementById('registerForm').addEventListener('submit', async event =
   const data = Object.fromEntries(new FormData(event.currentTarget));
   try {
     await sendJson('/api/auth/register', data);
-    window.location.href = '/novo';
+    window.location.href = '/';
   } catch (error) {
     replaceChallenge('register', error.payload && error.payload.challenge);
     showMessage(error.message, true);
@@ -132,7 +132,7 @@ document.getElementById('loginForm').addEventListener('submit', async event => {
       showMessage('Digite a sequência exibida para confirmar seu acesso.');
       return;
     }
-    window.location.href = '/novo';
+    window.location.href = '/';
   } catch (error) {
     replaceChallenge('login', error.payload && error.payload.challenge);
     showMessage(error.message, true);

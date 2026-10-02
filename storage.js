@@ -307,6 +307,10 @@ async function deleteExpiredTrips(activeCutoff, closedCutoff) {
   });
 }
 
+async function deleteTrip(id) {
+  await client.execute({ sql: 'DELETE FROM trips WHERE id = ?', args: [id] });
+}
+
 module.exports = {
   initializeStorage,
   findUserByEmail,
@@ -325,5 +329,6 @@ module.exports = {
   listUserTrips,
   findTrip,
   saveTrip,
+  deleteTrip,
   deleteExpiredTrips
 };

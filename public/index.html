@@ -19,6 +19,14 @@
   <meta name="apple-mobile-web-app-title" content="GPISSI">
   <meta name="theme-color" content="#ff6600">
   <meta name="mobile-web-app-capable" content="yes">
+  <script>
+    // Abre imediatamente na tela de login se não houver sessão ativa
+    fetch('/api/auth/me').then(res => {
+      if (!res.ok) window.location.replace('/conta');
+    }).catch(() => {
+      window.location.replace('/conta');
+    });
+  </script>
   <style>
     /* DASHBOARD SPECIFIC STYLES */
     .dash-kpis {

@@ -1185,12 +1185,18 @@ app.post('/api/viagens/:id/checkin', checkinLimiter, loadOptionalAccount, async 
   });
 });
 
-// SPA ROUTES - DASHBOARD É A PÁGINA INICIAL (/)
-app.get('/', (req, res) => {
+// SPA ROUTES - ABRE NO LOGIN SE NÃO ESTIVER AUTENTICADO; DEPOIS CARREGA DASHBOARD
+app.get('/', loadOptionalAccount, (req, res) => {
+  if (!req.user) {
+    return res.redirect('/conta');
+  }
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-app.get('/dashboard', (req, res) => {
+app.get('/dashboard', loadOptionalAccount, (req, res) => {
+  if (!req.user) {
+    return res.redirect('/conta');
+  }
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
