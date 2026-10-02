@@ -548,6 +548,7 @@ app.get('/api/members', requireAccount, async (req, res) => {
     id: contact.id,
     kind: 'contact',
     nome: contact.nome.trim().split(/\s+/)[0],
+    relacao: contact.relacao || 'Nenhum',
     telefone: contact.telefone
   }));
   res.json([...members.filter(member => member.id !== req.user.id), ...ownContacts]);
@@ -567,6 +568,24 @@ app.put('/api/account/companions', requireAccount, async (req, res) => {
     return res.status(400).json({ error: 'Cadastre no máximo quatro acompanhantes.' });
   }
 
+  const validRelations = ['Nenhum', 'Esposa', 'Filho(a)', 'Neto(a)', 'Sobrinho(a)', 'Amigo(a)'];
+  const relMap = {
+    'nenhum': 'Nenhum',
+    'esposa': 'Esposa',
+    'filho(a)': 'Filho(a)',
+    'filho': 'Filho(a)',
+    'filha': 'Filho(a)',
+    'neto(a)': 'Neto(a)',
+    'neto': 'Neto(a)',
+    'neta': 'Neto(a)',
+    'sobrinho(a)': 'Sobrinho(a)',
+    'sobrinho': 'Sobrinho(a)',
+    'sobrinha': 'Sobrinho(a)',
+    'amigo(a)': 'Amigo(a)',
+    'amigo': 'Amigo(a)',
+    'amiga': 'Amigo(a)'
+  };
+
   const companions = [];
   for (const item of submitted) {
     if (!item || typeof item !== 'object') {
@@ -578,9 +597,13 @@ app.put('/api/account/companions', requireAccount, async (req, res) => {
     if (!nome || digits.length !== 11) {
       return res.status(400).json({ error: 'Preencha o nome e um celular com DDD em cada acompanhante.' });
     }
+    const rawRel = String(item.relacao || item.relationship || 'Nenhum').trim();
+    const relacao = relMap[rawRel.toLowerCase()] || (validRelations.includes(rawRel) ? rawRel : 'Nenhum');
+
     companions.push({
       id: typeof item.id === 'string' && /^[a-f0-9-]{36}$/i.test(item.id) ? item.id : crypto.randomUUID(),
       nome,
+      relacao,
       telefone: `(${digits.slice(0, 2)}) ${digits[2]} ${digits.slice(3, 7)}-${digits.slice(7)}`
     });
   }
@@ -901,13 +924,18 @@ app.post('/api/viagens', createTripLimiter, requireAccount, async (req, res) => 
     const ownContacts = await storage.listOwnedContacts('companions', req.user.id);
     const availableCompanions = [
       ...members.filter(member => member.id !== req.user.id),
-      ...ownContacts.map(contact => ({
-        id: contact.id,
-        nome_colete: contact.nome,
-        grau: 'Contato',
-        funcao: 'Acompanhante',
-        telefone: contact.telefone
-      }))
+      ...ownContacts.map(contact => {
+        const hasRel = contact.relacao && contact.relacao !== 'Nenhum';
+        return {
+          id: contact.id,
+          nome_colete: hasRel ? `${contact.nome} (${contact.relacao})` : contact.nome,
+          nome_puro: contact.nome,
+          relacao: contact.relacao || 'Nenhum',
+          grau: hasRel ? contact.relacao : 'Contato',
+          funcao: 'Acompanhante',
+          telefone: contact.telefone
+        };
+      })
     ];
     const companions = companionIds.map(memberId => availableCompanions.find(member => member.id === memberId)).filter(Boolean);
     if (companions.length !== companionIds.length || companions.some(member => member.id === req.user.id)) {

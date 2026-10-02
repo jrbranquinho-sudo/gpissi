@@ -148,26 +148,28 @@ test('cadastro e login mostram desafio visual e renovam sequência incorreta', a
 
   const savedCompanions = await putJson('/api/account/companions', {
     companions: [
-      { nome: 'Acompanhante Um', telefone: '(64) 9 8765-4321' },
-      { nome: 'Acompanhante Dois', telefone: '11987654321' }
+      { nome: 'Acompanhante Um', telefone: '(64) 9 8765-4321', relacao: 'Esposa' },
+      { nome: 'Acompanhante Dois', telefone: '11987654321', relacao: 'Filho(a)' }
     ]
   }, cookie);
   assert.equal(savedCompanions.response.status, 200);
   assert.equal(savedCompanions.body.companions.length, 2);
   assert.equal(savedCompanions.body.companions.find(item => item.nome === 'Acompanhante Um').telefone, '(64) 9 8765-4321');
+  assert.equal(savedCompanions.body.companions.find(item => item.nome === 'Acompanhante Um').relacao, 'Esposa');
 
   const reloadedCompanions = await fetch(`${baseUrl}/api/account/companions`, { headers: { cookie } });
   assert.equal(reloadedCompanions.status, 200);
   const companions = await reloadedCompanions.json();
-  assert.ok(companions.some(item => item.nome === 'Acompanhante Dois'));
+  assert.ok(companions.some(item => item.nome === 'Acompanhante Dois' && item.relacao === 'Filho(a)'));
 
   const selectableContacts = await fetch(`${baseUrl}/api/members`, { headers: { cookie } });
   assert.equal(selectableContacts.status, 200);
   const contacts = await selectableContacts.json();
   const personalContact = contacts.find(contact => contact.kind === 'contact' && contact.telefone === '(64) 9 8765-4321');
-  assert.deepEqual({ name: personalContact.nome, phone: personalContact.telefone }, {
+  assert.deepEqual({ name: personalContact.nome, phone: personalContact.telefone, relacao: personalContact.relacao }, {
     name: 'Acompanhante',
-    phone: '(64) 9 8765-4321'
+    phone: '(64) 9 8765-4321',
+    relacao: 'Esposa'
   });
   assert.equal(personalContact.nome_colete, undefined);
 

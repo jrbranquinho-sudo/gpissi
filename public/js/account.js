@@ -147,6 +147,7 @@ document.getElementById('logoutButton').addEventListener('click', async () => {
 function renderCompanionInputs(companions = []) {
   const container = document.getElementById('accountCompanionsFields');
   container.replaceChildren();
+  const relations = ['Nenhum', 'Esposa', 'Filho(a)', 'Neto(a)', 'Sobrinho(a)', 'Amigo(a)'];
   for (let index = 0; index < 4; index += 1) {
     const companion = companions[index] || {};
     const row = document.createElement('div');
@@ -161,6 +162,21 @@ function renderCompanionInputs(companions = []) {
     nameInput.maxLength = 100;
     nameInput.value = companion.nome || '';
     nameInput.autocomplete = 'off';
+
+    const relLabel = document.createElement('label');
+    relLabel.textContent = 'Tipo de Relação';
+    const relSelect = document.createElement('select');
+    relSelect.className = 'form-control companion-relacao';
+    relations.forEach(rel => {
+      const opt = document.createElement('option');
+      opt.value = rel;
+      opt.textContent = rel;
+      if ((companion.relacao || 'Nenhum').toLowerCase() === rel.toLowerCase()) {
+        opt.selected = true;
+      }
+      relSelect.appendChild(opt);
+    });
+
     const phoneLabel = document.createElement('label');
     phoneLabel.textContent = 'Celular';
     const phoneInput = document.createElement('input');
@@ -175,7 +191,7 @@ function renderCompanionInputs(companions = []) {
     idInput.type = 'hidden';
     idInput.className = 'companion-id';
     idInput.value = companion.id || '';
-    row.append(title, nameLabel, nameInput, phoneLabel, phoneInput, idInput);
+    row.append(title, nameLabel, nameInput, relLabel, relSelect, phoneLabel, phoneInput, idInput);
     container.append(row);
     setupPhoneMask(phoneInput);
   }
@@ -222,6 +238,7 @@ document.getElementById('companionsForm').addEventListener('submit', async event
   const companions = [...document.querySelectorAll('#accountCompanionsFields .account-companion-row')].map(row => ({
     id: row.querySelector('.companion-id').value,
     nome: row.querySelector('.companion-name').value.trim(),
+    relacao: row.querySelector('.companion-relacao')?.value || 'Nenhum',
     telefone: row.querySelector('.companion-phone').value
   }));
   try {

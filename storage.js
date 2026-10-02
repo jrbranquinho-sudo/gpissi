@@ -48,6 +48,7 @@ function initializeStorage() {
           user_id TEXT NOT NULL,
           name TEXT NOT NULL,
           phone TEXT NOT NULL,
+          relationship TEXT DEFAULT '',
           created_at TEXT NOT NULL,
           UNIQUE (user_id, id)
         )`,
@@ -82,6 +83,12 @@ function initializeStorage() {
       if (!knownColumns.has('email_otp_hash')) await client.execute('ALTER TABLE users ADD COLUMN email_otp_hash TEXT');
       if (!knownColumns.has('email_otp_expires_at')) await client.execute('ALTER TABLE users ADD COLUMN email_otp_expires_at TEXT');
       if (!knownColumns.has('email_verified')) await client.execute('ALTER TABLE users ADD COLUMN email_verified INTEGER NOT NULL DEFAULT 0');
+
+      const companionCols = await client.execute('PRAGMA table_info(companions)');
+      const companionColNames = new Set(companionCols.rows.map(row => row.name));
+      if (!companionColNames.has('relationship')) {
+        await client.execute("ALTER TABLE companions ADD COLUMN relationship TEXT DEFAULT ''");
+      }
 
       await migrateProfileContacts();
 
@@ -156,8 +163,15 @@ async function migrateProfileContacts() {
 
 async function listOwnedContacts(table, userId) {
   if (!['companions', 'emergency_contacts'].includes(table)) throw new Error('Unsupported contact table');
+  if (table === 'companions') {
+    const result = await client.execute({
+      sql: `SELECT id, name AS nome, phone AS telefone, COALESCE(relationship, 'Nenhum') AS relacao FROM companions WHERE user_id = ? ORDER BY created_at, name`,
+      args: [userId]
+    });
+    return result.rows;
+  }
   const result = await client.execute({
-    sql: `SELECT id, name AS nome, phone AS telefone FROM ${table} WHERE user_id = ? ORDER BY created_at, name`,
+    sql: `SELECT id, name AS nome, phone AS telefone FROM emergency_contacts WHERE user_id = ? ORDER BY created_at, name`,
     args: [userId]
   });
   return result.rows;
@@ -166,10 +180,21 @@ async function listOwnedContacts(table, userId) {
 async function replaceOwnedContacts(table, userId, contacts) {
   if (!['companions', 'emergency_contacts'].includes(table)) throw new Error('Unsupported contact table');
   const now = new Date().toISOString();
+  if (table === 'companions') {
+    const statements = [
+      { sql: `DELETE FROM companions WHERE user_id = ?`, args: [userId] },
+      ...contacts.map(contact => ({
+        sql: `INSERT INTO companions (id, user_id, name, phone, relationship, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+        args: [contact.id, userId, contact.nome, contact.telefone, contact.relacao || 'Nenhum', now]
+      }))
+    ];
+    await client.batch(statements, 'write');
+    return contacts;
+  }
   const statements = [
-    { sql: `DELETE FROM ${table} WHERE user_id = ?`, args: [userId] },
+    { sql: `DELETE FROM emergency_contacts WHERE user_id = ?`, args: [userId] },
     ...contacts.map(contact => ({
-      sql: `INSERT INTO ${table} (id, user_id, name, phone, created_at) VALUES (?, ?, ?, ?, ?)`,
+      sql: `INSERT INTO emergency_contacts (id, user_id, name, phone, created_at) VALUES (?, ?, ?, ?, ?)`,
       args: [contact.id, userId, contact.nome, contact.telefone, now]
     }))
   ];

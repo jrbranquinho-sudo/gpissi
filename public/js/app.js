@@ -407,7 +407,8 @@ function setupCompanionToggle() {
             checkbox.name = 'companion_option';
             const name = document.createElement('span');
             if (member.kind === 'contact') {
-              name.textContent = `${member.nome} · ${member.telefone}`;
+              const relText = member.relacao && member.relacao !== 'Nenhum' ? ` (${member.relacao})` : '';
+              name.textContent = `${member.nome}${relText} · ${member.telefone}`;
             } else {
               const role = [member.grau, member.funcao].filter(Boolean).join(' - ');
               name.textContent = `${member.nome_colete}${role ? ` (${role})` : ''}`;
