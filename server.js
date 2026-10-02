@@ -562,29 +562,34 @@ app.get('/api/account/emergency-contacts', requireAccount, async (req, res) => {
   res.json(await storage.listOwnedContacts('emergency_contacts', req.user.id));
 });
 
+const VALID_RELATIONSHIPS = ['Nenhum', 'Esposa', 'Filho(a)', 'Neto(a)', 'Sobrinho(a)', 'Amigo(a)'];
+const RELATIONSHIP_MAP = {
+  'nenhum': 'Nenhum',
+  'esposa': 'Esposa',
+  'filho(a)': 'Filho(a)',
+  'filho': 'Filho(a)',
+  'filha': 'Filho(a)',
+  'neto(a)': 'Neto(a)',
+  'neto': 'Neto(a)',
+  'neta': 'Neto(a)',
+  'sobrinho(a)': 'Sobrinho(a)',
+  'sobrinho': 'Sobrinho(a)',
+  'sobrinha': 'Sobrinho(a)',
+  'amigo(a)': 'Amigo(a)',
+  'amigo': 'Amigo(a)',
+  'amiga': 'Amigo(a)'
+};
+
+function normalizeRelationship(value) {
+  const raw = String(value || 'Nenhum').trim();
+  return RELATIONSHIP_MAP[raw.toLowerCase()] || (VALID_RELATIONSHIPS.includes(raw) ? raw : 'Nenhum');
+}
+
 app.put('/api/account/companions', requireAccount, async (req, res) => {
   const submitted = req.body.companions;
   if (!Array.isArray(submitted) || submitted.length > 4) {
     return res.status(400).json({ error: 'Cadastre no máximo quatro acompanhantes.' });
   }
-
-  const validRelations = ['Nenhum', 'Esposa', 'Filho(a)', 'Neto(a)', 'Sobrinho(a)', 'Amigo(a)'];
-  const relMap = {
-    'nenhum': 'Nenhum',
-    'esposa': 'Esposa',
-    'filho(a)': 'Filho(a)',
-    'filho': 'Filho(a)',
-    'filha': 'Filho(a)',
-    'neto(a)': 'Neto(a)',
-    'neto': 'Neto(a)',
-    'neta': 'Neto(a)',
-    'sobrinho(a)': 'Sobrinho(a)',
-    'sobrinho': 'Sobrinho(a)',
-    'sobrinha': 'Sobrinho(a)',
-    'amigo(a)': 'Amigo(a)',
-    'amigo': 'Amigo(a)',
-    'amiga': 'Amigo(a)'
-  };
 
   const companions = [];
   for (const item of submitted) {
@@ -597,8 +602,7 @@ app.put('/api/account/companions', requireAccount, async (req, res) => {
     if (!nome || digits.length !== 11) {
       return res.status(400).json({ error: 'Preencha o nome e um celular com DDD em cada acompanhante.' });
     }
-    const rawRel = String(item.relacao || item.relationship || 'Nenhum').trim();
-    const relacao = relMap[rawRel.toLowerCase()] || (validRelations.includes(rawRel) ? rawRel : 'Nenhum');
+    const relacao = normalizeRelationship(item.relacao || item.relationship);
 
     companions.push({
       id: typeof item.id === 'string' && /^[a-f0-9-]{36}$/i.test(item.id) ? item.id : crypto.randomUUID(),
@@ -629,9 +633,12 @@ app.put('/api/account/emergency-contacts', requireAccount, async (req, res) => {
     if (!nome || digits.length !== 11) {
       return res.status(400).json({ error: 'Preencha nome e celular com DDD para cada contato de emergência.' });
     }
+    const relacao = normalizeRelationship(item.relacao || item.relationship);
+
     contacts.push({
       id: typeof item.id === 'string' && /^[a-f0-9-]{36}$/i.test(item.id) ? item.id : crypto.randomUUID(),
       nome,
+      relacao,
       telefone: `(${digits.slice(0, 2)}) ${digits[2]} ${digits.slice(3, 7)}-${digits.slice(7)}`
     });
   }
@@ -1020,7 +1027,9 @@ app.post('/api/viagens', createTripLimiter, requireAccount, async (req, res) => 
       vai_acompanhado: cleanVaiAcompanhado,
       quem_vai_junto: cleanQuemVaiJunto,
       acompanhantes: companions.map(({ id: memberId, nome_colete, grau, funcao }) => ({ id: memberId, nome_colete, grau, funcao })),
-      emergencia_contato: emergencyContact.nome,
+      emergencia_contato: emergencyContact.relacao && emergencyContact.relacao !== 'Nenhum'
+        ? `${emergencyContact.nome} (${emergencyContact.relacao})`
+        : emergencyContact.nome,
       emergencia_telefone: emergencyContact.telefone,
       emergency_contact_id: emergencyContact.id,
       observacoes_notas: cleanNotas,

@@ -200,6 +200,7 @@ function renderCompanionInputs(companions = []) {
 function renderEmergencyContactInputs(contacts = []) {
   const container = document.getElementById('emergencyContactsFields');
   container.replaceChildren();
+  const relations = ['Nenhum', 'Esposa', 'Filho(a)', 'Neto(a)', 'Sobrinho(a)', 'Amigo(a)'];
   for (let index = 0; index < 3; index += 1) {
     const contact = contacts[index] || {};
     const row = document.createElement('div');
@@ -213,6 +214,21 @@ function renderEmergencyContactInputs(contacts = []) {
     nameInput.className = 'form-control emergency-contact-name';
     nameInput.maxLength = 100;
     nameInput.value = contact.nome || '';
+
+    const relLabel = document.createElement('label');
+    relLabel.textContent = 'Tipo de Relação';
+    const relSelect = document.createElement('select');
+    relSelect.className = 'form-control emergency-contact-relacao';
+    relations.forEach(rel => {
+      const opt = document.createElement('option');
+      opt.value = rel;
+      opt.textContent = rel;
+      if ((contact.relacao || 'Nenhum').toLowerCase() === rel.toLowerCase()) {
+        opt.selected = true;
+      }
+      relSelect.appendChild(opt);
+    });
+
     const phoneLabel = document.createElement('label');
     phoneLabel.textContent = 'Celular';
     const phoneInput = document.createElement('input');
@@ -226,7 +242,7 @@ function renderEmergencyContactInputs(contacts = []) {
     idInput.type = 'hidden';
     idInput.className = 'emergency-contact-id';
     idInput.value = contact.id || '';
-    row.append(title, nameLabel, nameInput, phoneLabel, phoneInput, idInput);
+    row.append(title, nameLabel, nameInput, relLabel, relSelect, phoneLabel, phoneInput, idInput);
     container.append(row);
     setupPhoneMask(phoneInput);
   }
@@ -261,14 +277,12 @@ document.getElementById('companionsForm').addEventListener('submit', async event
 document.getElementById('emergencyContactsForm').addEventListener('submit', async event => {
   event.preventDefault();
   const message = document.getElementById('emergencyContactsMessage');
-  const contacts = [...document.querySelectorAll('.account-companion-row .emergency-contact-name')].map(nameInput => {
-    const row = nameInput.closest('.account-companion-row');
-    return {
-      id: row.querySelector('.emergency-contact-id').value,
-      nome: nameInput.value.trim(),
-      telefone: row.querySelector('.emergency-contact-phone').value
-    };
-  });
+  const contacts = [...document.querySelectorAll('#emergencyContactsFields .account-companion-row')].map(row => ({
+    id: row.querySelector('.emergency-contact-id').value,
+    nome: row.querySelector('.emergency-contact-name').value.trim(),
+    relacao: row.querySelector('.emergency-contact-relacao')?.value || 'Nenhum',
+    telefone: row.querySelector('.emergency-contact-phone').value
+  }));
   try {
     const response = await fetch('/api/account/emergency-contacts', {
       method: 'PUT',

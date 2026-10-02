@@ -442,7 +442,8 @@ async function setupEmergencyContactSelect() {
     select.replaceChildren(new Option('Selecione um contato de emergência...', ''));
     if (!response.ok) throw new Error(contacts.error || 'Entre na conta para carregar os contatos.');
     contacts.forEach(contact => {
-      select.add(new Option(`${contact.nome} · ${contact.telefone}`, contact.id));
+      const relText = contact.relacao && contact.relacao !== 'Nenhum' ? ` (${contact.relacao})` : '';
+      select.add(new Option(`${contact.nome}${relText} · ${contact.telefone}`, contact.id));
     });
     if (contacts.length === 0) {
       hint.textContent = 'Cadastre contatos na sua conta antes de criar uma viagem.';

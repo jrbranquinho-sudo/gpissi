@@ -58,6 +58,7 @@ function initializeStorage() {
           user_id TEXT NOT NULL,
           name TEXT NOT NULL,
           phone TEXT NOT NULL,
+          relationship TEXT DEFAULT '',
           created_at TEXT NOT NULL,
           UNIQUE (user_id, id)
         )`,
@@ -88,6 +89,12 @@ function initializeStorage() {
       const companionColNames = new Set(companionCols.rows.map(row => row.name));
       if (!companionColNames.has('relationship')) {
         await client.execute("ALTER TABLE companions ADD COLUMN relationship TEXT DEFAULT ''");
+      }
+
+      const emergencyCols = await client.execute('PRAGMA table_info(emergency_contacts)');
+      const emergencyColNames = new Set(emergencyCols.rows.map(row => row.name));
+      if (!emergencyColNames.has('relationship')) {
+        await client.execute("ALTER TABLE emergency_contacts ADD COLUMN relationship TEXT DEFAULT ''");
       }
 
       await migrateProfileContacts();
@@ -171,7 +178,7 @@ async function listOwnedContacts(table, userId) {
     return result.rows;
   }
   const result = await client.execute({
-    sql: `SELECT id, name AS nome, phone AS telefone FROM emergency_contacts WHERE user_id = ? ORDER BY created_at, name`,
+    sql: `SELECT id, name AS nome, phone AS telefone, COALESCE(relationship, 'Nenhum') AS relacao FROM emergency_contacts WHERE user_id = ? ORDER BY created_at, name`,
     args: [userId]
   });
   return result.rows;
@@ -194,8 +201,8 @@ async function replaceOwnedContacts(table, userId, contacts) {
   const statements = [
     { sql: `DELETE FROM emergency_contacts WHERE user_id = ?`, args: [userId] },
     ...contacts.map(contact => ({
-      sql: `INSERT INTO emergency_contacts (id, user_id, name, phone, created_at) VALUES (?, ?, ?, ?, ?)`,
-      args: [contact.id, userId, contact.nome, contact.telefone, now]
+      sql: `INSERT INTO emergency_contacts (id, user_id, name, phone, relationship, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+      args: [contact.id, userId, contact.nome, contact.telefone, contact.relacao || 'Nenhum', now]
     }))
   ];
   await client.batch(statements, 'write');

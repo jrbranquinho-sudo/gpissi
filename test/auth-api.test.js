@@ -180,17 +180,19 @@ test('cadastro e login mostram desafio visual e renovam sequência incorreta', a
 
   const savedEmergencyContacts = await putJson('/api/account/emergency-contacts', {
     contacts: [
-      { nome: 'Contato de Emergência', telefone: '(64) 9 1111-2222' },
-      { nome: 'Segundo Contato', telefone: '11922223333' }
+      { nome: 'Contato de Emergência', telefone: '(64) 9 1111-2222', relacao: 'Esposa' },
+      { nome: 'Segundo Contato', telefone: '11922223333', relacao: 'Amigo(a)' }
     ]
   }, cookie);
   assert.equal(savedEmergencyContacts.response.status, 200);
   assert.equal(savedEmergencyContacts.body.contacts[0].telefone, '(64) 9 1111-2222');
+  assert.equal(savedEmergencyContacts.body.contacts[0].relacao, 'Esposa');
 
   const reloadedEmergencyContacts = await fetch(`${baseUrl}/api/account/emergency-contacts`, { headers: { cookie } });
   assert.equal(reloadedEmergencyContacts.status, 200);
   const emergencyContacts = await reloadedEmergencyContacts.json();
   assert.equal(emergencyContacts[1].nome, 'Segundo Contato');
+  assert.equal(emergencyContacts[1].relacao, 'Amigo(a)');
 
   const saveVehicle = await putJson('/api/account/vehicles', {
     vehicle: { id: crypto.randomUUID(), tipo: 'MOTO', placa: 'ABC-1234', marca: 'Honda', modelo: 'CB 500', detalhes: '' }
@@ -238,7 +240,7 @@ test('cadastro e login mostram desafio visual e renovam sequência incorreta', a
     emergency_contact_id: emergencyContacts[0].id
   }, { cookie });
   assert.equal(trip.response.status, 201, JSON.stringify(trip.body));
-  assert.equal(trip.body.viagem.emergencia_contato, 'Contato de Emergência');
+  assert.equal(trip.body.viagem.emergencia_contato, 'Contato de Emergência (Esposa)');
   assert.equal(trip.body.viagem.emergencia_telefone, '(64) 9 1111-2222');
   const tripVehiclesResponse = await fetch(`${baseUrl}/api/account/vehicles`, { headers: { cookie } });
   const tripVehicles = await tripVehiclesResponse.json();
