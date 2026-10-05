@@ -202,9 +202,9 @@ function generateSecurePin() {
 
 // REGRAS DE RETENÇÃO E PURGE AUTOMÁTICO:
 // - Ativas: até 72 horas
-// - Encerradas: MANTIDAS POR EXATAMENTE 2 HORAS APÓS O ENCERRAMENTO
+// - Encerradas: MANTIDAS POR ATÉ 72 HORAS APÓS O ENCERRAMENTO
 const MAX_ACTIVE_LIFETIME_MS = 72 * 60 * 60 * 1000; // 72 horas
-const MAX_CLOSED_LIFETIME_MS = 2 * 60 * 60 * 1000;  // 2 horas
+const MAX_CLOSED_LIFETIME_MS = 72 * 60 * 60 * 1000; // 72 horas
 
 // Periodic retention cleanup for persistent trips
 const cleanupTimer = setInterval(() => {
@@ -1199,7 +1199,7 @@ app.post('/api/viagens/:id/encerrar', pinAuthLimiter, loadOptionalAccount, async
 
   res.json({
     success: true,
-    message: 'Viagem encerrada com sucesso pelo autor do protocolo. A ficha permanecerá visível por 2 horas.',
+    message: 'Viagem encerrada com sucesso pelo autor do protocolo. A ficha permanecerá visível por 72 horas.',
     viagem
   });
 });

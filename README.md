@@ -66,7 +66,7 @@ Para garantir resiliência contra ataques maliciosos, invasões e abusos na estr
    - Visão executiva com contadores KPI (Na Estrada Agora, Viagens Encerradas, Total).
    - Divisão clara entre **"Na Estrada Agora"** (com badge pulsante e tempo decorrido) e **"Viagens Encerradas"**.
    - **Clique e Acompanhe no Radar**: clicar em qualquer card de viagem abre diretamente a visualização focada no Radar.
-   - Retenção inteligente de **2 horas** para viagens concluídas (sendo expurgadas automaticamente após 2h do encerramento).
+   - Retenção inteligente de **72 horas** para viagens concluídas (sendo expurgadas automaticamente após 72h do encerramento).
    - Ordenação cronológica estrita do mais recente para o mais antigo.
    - Polling automático a cada 20 segundos.
 
