@@ -78,7 +78,7 @@
           </div>
           <div class="route-stat-item">
             <span>📡 Atualização:</span>
-            <strong style="color: #00e676;">A cada 5 min no trajeto</strong>
+            <strong style="color: #00e676;">A cada 10s no trajeto</strong>
           </div>
         </div>
         <div style="font-size: 0.82rem; color: var(--text-muted);">
@@ -135,10 +135,10 @@
       initRadarMap();
       fetchTrips();
 
-      // Auto-poll radar updates every 30 seconds
+      // Auto-poll radar updates every 10 seconds (tempo real)
       setInterval(() => {
         fetchTrips(true);
-      }, 30000);
+      }, 10000);
 
       // Filters
       document.querySelectorAll('#filterTabs button').forEach(btn => {

@@ -288,6 +288,61 @@ test('cadastro e login mostram desafio visual e renovam sequência incorreta', a
   const repeatedTrip = await repeatedTripResponse.json();
   assert.equal(repeatedTrip.checkins.at(-1).tipo, 'gps');
 
+  // Teste: Segundo usuário autenticado acessa o Dashboard e visualiza as viagens ativas na estrada
+  const otherEmail = `other-member-${crypto.randomUUID()}@example.test`;
+  const otherChallenge = await postJson('/api/auth/challenge', { purpose: 'register' });
+  const otherCode = codeFromChallenge(otherChallenge.body);
+  const otherAccount = await postJson('/api/auth/register', {
+    nome: 'Segundo Integrante',
+    nome_colete: 'Falcão',
+    telefone: '11988887777',
+    funcao_grau: 'MEIO ESCUDO - IV',
+    email: otherEmail,
+    password: 'senha-segura-123',
+    challenge_id: otherChallenge.body.id,
+    challenge_code: otherCode
+  });
+  assert.equal(otherAccount.response.status, 201);
+  const otherCookie = otherAccount.response.headers.get('set-cookie').split(';')[0];
+
+  // Dashboard de quem está logado lista em tempo real as viagens na estrada
+  const dashboardListRes = await fetch(`${baseUrl}/api/viagens`, { headers: { cookie: otherCookie } });
+  assert.equal(dashboardListRes.status, 200);
+  const dashboardTrips = await dashboardListRes.json();
+  assert.ok(dashboardTrips.some(item => item.id === trip.body.id));
+
+  // Membro autenticado visualiza telemetria de viagem mesmo sem share_token
+  const otherViewTripRes = await fetch(`${baseUrl}/api/viagens/${trip.body.id}`, { headers: { cookie: otherCookie } });
+  assert.equal(otherViewTripRes.status, 200);
+  const otherViewTrip = await otherViewTripRes.json();
+  assert.equal(otherViewTrip.id, trip.body.id);
+  assert.equal(otherViewTrip.is_creator, false);
+
+  // Teste: Sincronização de pontos offline acumulados na estrada (batch) ao registrar sinal de internet
+  const offlineBatchRes = await postJson(`/api/viagens/${trip.body.id}/checkin`, {
+    batch: [
+      {
+        lat: -17.328,
+        lng: -48.424,
+        timestamp: '2026-09-28T12:06:00.000Z',
+        descricao: 'Ponto de passagem no trajeto (10s)'
+      },
+      {
+        lat: -17.329,
+        lng: -48.425,
+        timestamp: '2026-09-28T12:06:10.000Z',
+        descricao: 'Ponto de passagem no trajeto (10s)'
+      }
+    ]
+  }, { cookie });
+  assert.equal(offlineBatchRes.response.status, 200);
+
+  const tripWithBatchRes = await fetch(`${baseUrl}/api/viagens/${trip.body.id}`, { headers: { cookie } });
+  const tripWithBatch = await tripWithBatchRes.json();
+  assert.ok(tripWithBatch.checkins.length >= 4);
+  const lastOfflinePoint = tripWithBatch.checkins.at(-1);
+  assert.equal(lastOfflinePoint.cidade, 'Palmelo - GO');
+
   // Teste de Edição da Viagem antes de encerrar
   const editTrip = await putJson(`/api/viagens/${trip.body.id}`, {
     transporte_modelo: 'MT-09',

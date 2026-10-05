@@ -72,7 +72,7 @@ app.use('/api', async (req, res, next) => {
 // 4. RATE LIMITERS FOR DEFENSE AGAINST DDOS & BRUTE-FORCE
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 min
-  max: 300,
+  max: 1200,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Muitas requisições originadas deste IP. Por favor, aguarde alguns minutos.' }
@@ -97,7 +97,7 @@ const pinAuthLimiter = rateLimit({
 
 const checkinLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 120,
+  max: 600,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Limite de envio de check-ins atingido temporariamente. Aguarde.' }
@@ -318,22 +318,38 @@ async function repairLegacyTripGeocodes(trip) {
   return trip;
 }
 
+const reverseGeocodeCache = new Map();
+
 async function reverseGeocodeLocation(lat, lon) {
+  if (!gpsUtils.isValidCoordinate(lat, lon)) return '';
+  const numLat = Number(lat);
+  const numLon = Number(lon);
+  // Arredondamento para ~2-3 km para cache de alta taxa de acerto em rodovias
+  const cacheKey = `${numLat.toFixed(2)},${numLon.toFixed(2)}`;
+  if (reverseGeocodeCache.has(cacheKey)) {
+    return reverseGeocodeCache.get(cacheKey);
+  }
+
   try {
     const params = new URLSearchParams({
       format: 'jsonv2',
-      lat: String(lat),
-      lon: String(lon),
+      lat: String(numLat),
+      lon: String(numLon),
       zoom: '10',
       addressdetails: '1'
     });
     const response = await fetch(`https://nominatim.openstreetmap.org/reverse?${params}`, {
       headers: { 'User-Agent': 'GPISSI-InsanosMC/2.0 (seguranca@insanosmc.com)' },
-      signal: AbortSignal.timeout(8000)
+      signal: AbortSignal.timeout(6000)
     });
     if (!response.ok) return '';
     const result = await response.json();
-    return gpsUtils.extractMunicipality(result.address);
+    const city = gpsUtils.extractMunicipality(result.address);
+    if (city) {
+      if (reverseGeocodeCache.size > 3000) reverseGeocodeCache.clear();
+      reverseGeocodeCache.set(cacheKey, city);
+    }
+    return city;
   } catch (error) {
     console.warn('Reverse geocoding indisponível:', error.message);
     return '';
@@ -848,7 +864,7 @@ app.post('/api/calcular-rota', async (req, res) => {
 
 // API: List trips - ORDENADO DO MAIS RECENTE PARA O MAIS ANTIGO
 app.get('/api/viagens', requireAccount, async (req, res) => {
-  const viagens = await storage.listUserTrips(req.user.id);
+  const viagens = await storage.listTrips();
   const list = viagens.map(v => ({
     id: v.id,
     origem: v.origem,
@@ -898,9 +914,10 @@ app.get('/api/viagens/:id', loadOptionalAccount, async (req, res) => {
   viagem = await repairLegacyTripGeocodes(viagem);
 
   const isCreator = Boolean(req.user && viagem.owner_user_id === req.user.id);
+  const isMember = Boolean(req.user);
 
   const shareValid = securelyMatches(shareToken, viagem.share_token);
-  if (!isCreator && !shareValid) {
+  if (!isCreator && !isMember && !shareValid) {
     return res.status(404).json({ error: 'Link de rastreamento inválido ou expirado.' });
   }
 
@@ -1320,24 +1337,33 @@ app.post('/api/viagens/:id/checkin', checkinLimiter, loadOptionalAccount, async 
   if (!viagem.checkins) viagem.checkins = [];
 
   if (Array.isArray(batch) && batch.length > 0) {
-    batch.slice(0, 30).forEach(item => {
+    for (const item of batch.slice(0, 100)) {
       const bLat = parseFloat(item.lat);
       const bLng = parseFloat(item.lng);
       if (gpsUtils.isValidCoordinate(bLat, bLng)) {
         if (viagem.origem_geo && viagem.destino_geo && !gpsUtils.isPointInRouteCorridor(bLat, bLng, viagem.origem_geo, viagem.destino_geo)) {
           console.warn(`[Telemetria Batch] Ponto ${bLat}, ${bLng} ignorado: fora do corredor da rota.`);
-          return;
+          continue;
         }
-        viagem.checkins.push({
-          timestamp: item.timestamp || new Date().toISOString(),
+
+        const passageCity = await reverseGeocodeLocation(bLat, bLng);
+        const lastCheckinCity = viagem.checkins.length ? viagem.checkins[viagem.checkins.length - 1]?.cidade : '';
+        const previousCity = viagem.last_city || lastCheckinCity || '';
+        const resolvedCity = passageCity || (item.cidade && item.cidade !== 'Localização GPS' && item.cidade !== 'Localização offline sincronizada' ? item.cidade : previousCity) || 'Em deslocamento na Rodovia';
+
+        const checkin = gpsUtils.buildGpsCheckin({
           lat: bLat,
           lng: bLng,
-          descricao: sanitizeString(item.descricao || 'Ponto no Trajeto (Sincronizado)', 100),
-          cidade: sanitizeString(item.cidade || 'Localização offline sincronizada', 100),
-          tipo: 'gps'
-        });
+          timestamp: item.timestamp,
+          description: sanitizeString(item.descricao || 'Ponto de passagem no trajeto', 100),
+          city: sanitizeString(resolvedCity, 100),
+          reverseGeocodedCity: passageCity
+        }, previousCity);
+
+        viagem.checkins.push(checkin);
+        if (passageCity) viagem.last_city = passageCity;
       }
-    });
+    }
   } else {
     const pLat = parseFloat(lat);
     const pLng = parseFloat(lng);
@@ -1364,14 +1390,17 @@ app.post('/api/viagens/:id/checkin', checkinLimiter, loadOptionalAccount, async 
     const passageCity = await reverseGeocodeLocation(pLat, pLng);
     const lastCheckinCity = viagem.checkins[viagem.checkins.length - 1]?.cidade;
     const previousCity = viagem.last_city || lastCheckinCity;
+    const resolvedCity = passageCity || (cidade && cidade !== 'Localização GPS' ? cidade : previousCity) || 'Em deslocamento na Rodovia';
+
     const checkin = gpsUtils.buildGpsCheckin({
       lat: pLat,
       lng: pLng,
       timestamp,
-      description: sanitizeString(descricao || 'Ponto GPS no trajeto', 100),
-      city: sanitizeString(cidade || 'Localização GPS', 100),
+      description: sanitizeString(descricao || 'Ponto de passagem no trajeto', 100),
+      city: sanitizeString(resolvedCity, 100),
       reverseGeocodedCity: passageCity
     }, previousCity);
+
     viagem.checkins.push(checkin);
     if (passageCity) viagem.last_city = passageCity;
   }

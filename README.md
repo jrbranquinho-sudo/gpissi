@@ -79,7 +79,7 @@ Para garantir resiliência contra ataques maliciosos, invasões e abusos na estr
 
 3. **📡 Radar de Estrada (`/radar`)**:
    - Mapa vetorial interativo com **OpenFreeMap** (`tiles.openfreemap.org/styles/liberty`) via MapLibre GL JS.
-   - Atualização em tempo real de posições GPS a cada 5 minutos.
+   - Atualização em tempo real de posições GPS e pontos de passagem a cada intervalo de 10 segundos ou menos, além de sincronização imediata ao registrar sinal de internet.
    - Fallback offline que mantém o último ponto registrado caso o sinal de operadora caia em serras ou rodovias.
 
 ---

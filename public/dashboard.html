@@ -367,10 +367,10 @@
     document.addEventListener('DOMContentLoaded', () => {
       fetchDashboardTrips();
 
-      // Poll every 20 seconds
+      // Poll every 10 seconds (tempo real)
       setInterval(() => {
         fetchDashboardTrips(true);
-      }, 20000);
+      }, 10000);
 
       document.getElementById('dashSearch').addEventListener('input', (e) => {
         renderDashboard(e.target.value.toLowerCase().trim());

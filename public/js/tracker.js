@@ -15,11 +15,13 @@ let plannedRouteKey = '';
 let plannedRoutePromise = null;
 let isSendingGps = false;
 
-// 5-minute GPS tracking timer
-const TRACK_INTERVAL_SECONDS = 300; // 5 minutos
+// 10-second GPS tracking timer & continuous GPS watcher
+const TRACK_INTERVAL_SECONDS = 10; // Intervalo de 10 segundos ou menos
 let trackCountdown = TRACK_INTERVAL_SECONDS;
 let autoTrackingInterval = null;
 let countdownTimer = null;
+let gpsWatchId = null;
+let lastKnownGpsPos = null;
 
 document.addEventListener('DOMContentLoaded', () => {
   const urlParams = new URLSearchParams(window.location.search);
@@ -70,12 +72,12 @@ document.addEventListener('DOMContentLoaded', () => {
   initOpenFreeMap();
   loadTripData(tripId, false, shareToken);
 
-  // Auto-refresh for viewers every 25 seconds
+  // Auto-refresh for viewers every 10 seconds (tempo real)
   setInterval(() => {
     if (currentTrip && currentTrip.status === 'EM ANDAMENTO') {
       loadTripData(tripId, true, shareToken);
     }
-  }, 25000);
+  }, 10000);
 
   setupEventListeners(tripId);
   setupNetworkListeners(tripId);
@@ -246,7 +248,7 @@ function renderTripDetails(trip) {
     locationPoints.forEach(point => {
       const item = document.createElement('li');
       const date = new Date(point.timestamp);
-      const type = point.tipo === 'city_passage' ? 'Passagem por' : (point.tipo === 'arrival' ? 'Chegada em' : 'Ponto GPS em');
+      const type = point.tipo === 'city_passage' ? 'Passagem por' : (point.tipo === 'arrival' ? 'Chegada em' : 'Ponto de passagem em');
       item.textContent = `${type} ${point.cidade || 'Localização GPS'} · ${date.toLocaleDateString('pt-BR')} ${date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
       if (point.tipo === 'city_passage' || point.tipo === 'arrival') item.classList.add('location-passage');
       historyList.append(item);
@@ -344,7 +346,7 @@ function updateCreatorPanelUI(trip) {
   }
 
   if (isCreatorAuth) {
-    authMsg.innerHTML = '<strong>👑 Autenticado como Piloto:</strong> Você registrou este protocolo. O rastreamento atualiza seu trajeto a cada 5 minutos automaticamente:';
+    authMsg.innerHTML = '<strong>👑 Autenticado como Piloto:</strong> Você registrou este protocolo. O rastreamento atualiza seu trajeto e pontos de passagem a cada 10 segundos ou ao registrar sinal de internet:';
     activeActions.style.display = 'flex';
     authPrompt.style.display = 'none';
     if (gpsStatusBox) gpsStatusBox.style.display = 'block';
@@ -358,50 +360,96 @@ function updateCreatorPanelUI(trip) {
   }
 }
 
-// 5-MINUTE AUTOMATIC GPS TRACKING LOGIC (WITH OFFLINE RESILIENCE)
-function start5MinuteAutoTracking(tripId) {
+// CONTINUOUS GPS WATCHER (Mantém coordenadas frescas de satélite sem atraso de fix)
+function startGpsWatcher() {
+  if (!navigator.geolocation || gpsWatchId !== null) return;
+  try {
+    gpsWatchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        if (pos && pos.coords && Number.isFinite(pos.coords.latitude) && Number.isFinite(pos.coords.longitude)) {
+          lastKnownGpsPos = {
+            latitude: pos.coords.latitude,
+            longitude: pos.coords.longitude,
+            accuracy: pos.coords.accuracy,
+            timestamp: pos.timestamp || Date.now()
+          };
+        }
+      },
+      (err) => {
+        console.warn('GPS Watcher oscilando:', err.message);
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 }
+    );
+  } catch (e) {
+    console.warn('Não foi possível iniciar watchPosition:', e);
+  }
+}
+
+function stopGpsWatcher() {
+  if (gpsWatchId !== null && navigator.geolocation) {
+    navigator.geolocation.clearWatch(gpsWatchId);
+    gpsWatchId = null;
+  }
+}
+
+// 10-SECOND AUTOMATIC GPS TRACKING LOGIC (WITH REALTIME PASSAGE POINTS & OFFLINE RESILIENCE)
+function start10SecondAutoTracking(tripId) {
   if (autoTrackingInterval) clearInterval(autoTrackingInterval);
   if (countdownTimer) clearInterval(countdownTimer);
 
+  startGpsWatcher();
   trackCountdown = TRACK_INTERVAL_SECONDS;
 
+  // Sincroniza eventuais pontos pendentes na fila offline
   syncOfflineCheckins(tripId);
 
-  // Não capturar automaticamente IP de provedor em desktop/laptop ao apenas analisar o mapa
-  const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent || '');
-  if (isMobile && currentTrip && currentTrip.status === 'EM ANDAMENTO') {
+  // Transmite a primeira posição imediatamente se a viagem estiver em andamento
+  if (currentTrip && currentTrip.status === 'EM ANDAMENTO') {
     transmitGpsLocation(tripId, true);
   }
 
-  // Countdown display updater every second
+  // Atualizador do HUD de contagem regressiva a cada 1 segundo
   countdownTimer = setInterval(() => {
     trackCountdown--;
+    const cdEl = document.getElementById('autoGpsCountdown');
+    if (cdEl) {
+      cdEl.textContent = `${String(Math.max(0, trackCountdown)).padStart(2, '0')}s`;
+    }
     if (trackCountdown <= 0) {
       trackCountdown = TRACK_INTERVAL_SECONDS;
+      if (currentTrip && currentTrip.status === 'EM ANDAMENTO') {
+        transmitGpsLocation(tripId, true);
+      }
     }
-    const mins = String(Math.floor(trackCountdown / 60)).padStart(2, '0');
-    const secs = String(trackCountdown % 60).padStart(2, '0');
-    const cdEl = document.getElementById('autoGpsCountdown');
-    if (cdEl) cdEl.textContent = `${mins}:${secs}`;
   }, 1000);
 
-  // 5-Minute interval execution (somente em dispositivos móveis na estrada)
+  // Intervalo de segurança a cada 10 segundos
   autoTrackingInterval = setInterval(() => {
-    if (isMobile && currentTrip && currentTrip.status === 'EM ANDAMENTO') {
+    if (currentTrip && currentTrip.status === 'EM ANDAMENTO') {
       transmitGpsLocation(tripId, true);
     }
   }, TRACK_INTERVAL_SECONDS * 1000);
 }
 
-function stop5MinuteAutoTracking() {
+// Alias de retrocompatibilidade
+function start5MinuteAutoTracking(tripId) {
+  start10SecondAutoTracking(tripId);
+}
+
+function stop10SecondAutoTracking() {
   if (autoTrackingInterval) clearInterval(autoTrackingInterval);
   if (countdownTimer) clearInterval(countdownTimer);
   autoTrackingInterval = null;
   countdownTimer = null;
+  stopGpsWatcher();
 }
 
-// TRANSMIT GPS LOCATION (Handles online transmission or offline queueing if cell signal drops)
-function transmitGpsLocation(tripId, isAutomatic = false) {
+function stop5MinuteAutoTracking() {
+  stop10SecondAutoTracking();
+}
+
+// TRANSMIT GPS LOCATION (Atualiza ponto de passagem a cada 10s ou ao registrar sinal de internet)
+async function transmitGpsLocation(tripId, isAutomatic = false) {
   if (isSendingGps) return;
   if (!navigator.geolocation) {
     if (!isAutomatic) alert('Geolocalização não é suportada pelo seu dispositivo.');
@@ -414,39 +462,35 @@ function transmitGpsLocation(tripId, isAutomatic = false) {
     btn.innerHTML = '<span>📡 Obtendo coordenadas GPS...</span>';
   }
 
-  navigator.geolocation.getCurrentPosition(
-    async (pos) => {
-      isSendingGps = true;
-      const lat = pos.coords.latitude;
-      const lng = pos.coords.longitude;
-      const accuracy = pos.coords.accuracy;
-      const timestamp = new Date(pos.timestamp || Date.now()).toISOString();
+  const handleCoords = async (lat, lng, accuracy, timestampMs) => {
+    isSendingGps = true;
+    try {
+      const timestamp = new Date(timestampMs || Date.now()).toISOString();
 
-      // PROTEÇÃO CONTRA IP DE PROVEDOR:
-      // Se a precisão for pior que 1500m, trata-se de geolocalização por IP/rede fixa e não de GPS de satélite
-      if (accuracy && accuracy > 1500) {
-        console.warn(`[GPISSI Telemetria] Ponto descartado por imprecisão (${Math.round(accuracy)}m). Provável IP de provedor.`);
+      // Descartar leituras com erro extremo (> 2500m) para evitar IP estático de provedor
+      if (accuracy && accuracy > 2500) {
+        console.warn(`[GPISSI Telemetria] Ponto descartado por imprecisão (${Math.round(accuracy)}m).`);
         isSendingGps = false;
         if (!isAutomatic && btn) {
           btn.disabled = false;
           btn.innerHTML = '<span>📡 Transmitir Ponto no Trajeto Agora</span>';
-          alert(`Sua conexão forneceu uma localização aproximada com margem de erro de ${Math.round(accuracy / 1000)} km (típico de IP do provedor). Para registrar a passagem correta, transmita pelo celular com GPS ativo.`);
+          alert(`Localização aproximada com margem de erro alta (${Math.round(accuracy / 1000)} km). Transmita pelo celular com GPS de satélite ativo.`);
         }
         return;
       }
 
-      // Validação de corredor da rota no frontend (origem e destino)
+      // Validação de corredor da rota no frontend
       if (currentTrip && currentTrip.origem_geo && currentTrip.destino_geo) {
         const inCorridor = (typeof GPISSIGps !== 'undefined' && GPISSIGps.isPointInRouteCorridor)
           ? GPISSIGps.isPointInRouteCorridor(lat, lng, currentTrip.origem_geo, currentTrip.destino_geo)
           : true;
         if (!inCorridor) {
-          console.warn(`[GPISSI Telemetria] Ponto [${lat}, ${lng}] fora do corredor da rota (${currentTrip.origem} -> ${currentTrip.destino}). Ignorado.`);
+          console.warn(`[GPISSI Telemetria] Ponto [${lat}, ${lng}] fora do corredor da rota. Ignorado.`);
           isSendingGps = false;
           if (!isAutomatic && btn) {
             btn.disabled = false;
             btn.innerHTML = '<span>📡 Transmitir Ponto no Trajeto Agora</span>';
-            alert('A localização detectada está distante da rota oficial planejada (provável IP de provedor fora da rodovia). Ponto não transmitido para manter a rota íntegra.');
+            alert('A localização detectada está distante da rota oficial planejada. Ponto não transmitido para manter a integridade do mapa.');
           }
           return;
         }
@@ -456,11 +500,11 @@ function transmitGpsLocation(tripId, isAutomatic = false) {
         lat,
         lng,
         timestamp,
-        descricao: isAutomatic ? 'Ponto Automático no Trajeto (5 min)' : 'Ponto Marcado no Trajeto',
-        cidade: 'Localização GPS'
+        descricao: isAutomatic ? 'Ponto de passagem no trajeto' : 'Ponto marcado no trajeto',
+        cidade: currentTrip?.last_city || 'Localização GPS'
       };
 
-      // Check online status
+      // Se não há internet, guarda na fila offline
       if (!navigator.onLine) {
         saveOfflineCheckin(tripId, pointData);
         showOfflineNotice(true);
@@ -472,44 +516,63 @@ function transmitGpsLocation(tripId, isAutomatic = false) {
         return;
       }
 
-      try {
-        const headers = { 'Content-Type': 'application/json' };
-        if (userAuthToken) headers['x-creator-token'] = userAuthToken;
-        if (userAuthPin) headers['x-creator-pin'] = userAuthPin;
+      const headers = { 'Content-Type': 'application/json' };
+      if (userAuthToken) headers['x-creator-token'] = userAuthToken;
+      if (userAuthPin) headers['x-creator-pin'] = userAuthPin;
 
-        const res = await fetch(`/api/viagens/${tripId}/checkin`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify(pointData)
-        });
+      const res = await fetch(`/api/viagens/${tripId}/checkin`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(pointData)
+      });
 
-        if (!res.ok) {
-          throw new Error('Servidor retornou erro ao gravar ponto.');
-        }
-
-        showOfflineNotice(false);
-        loadTripData(tripId, true, shareToken);
-
-        // Also check if any offline points were pending
-        syncOfflineCheckins(tripId);
-
-      } catch (err) {
-        console.warn('Falha de rede ao transmitir ponto GPS:', err);
-        // Fallback: save to offline queue, keep last known position on UI
-        saveOfflineCheckin(tripId, pointData);
-        showOfflineNotice(true);
-      } finally {
-        isSendingGps = false;
-        if (!isAutomatic && btn) {
-          btn.disabled = false;
-          btn.innerHTML = '<span>📡 Transmitir Ponto no Trajeto Agora</span>';
-        }
+      if (!res.ok) {
+        throw new Error('Servidor retornou erro ao gravar ponto.');
       }
+
+      showOfflineNotice(false);
+      loadTripData(tripId, true, shareToken);
+
+      // Sincroniza qualquer ponto que tenha ficado acumulado offline
+      syncOfflineCheckins(tripId);
+
+    } catch (err) {
+      console.warn('Falha de rede ao transmitir ponto GPS:', err.message);
+      saveOfflineCheckin(tripId, {
+        lat,
+        lng,
+        timestamp: new Date(timestampMs || Date.now()).toISOString(),
+        descricao: isAutomatic ? 'Ponto de passagem no trajeto' : 'Ponto marcado no trajeto',
+        cidade: currentTrip?.last_city || 'Localização GPS'
+      });
+      showOfflineNotice(true);
+    } finally {
+      isSendingGps = false;
+      if (!isAutomatic && btn) {
+        btn.disabled = false;
+        btn.innerHTML = '<span>📡 Transmitir Ponto no Trajeto Agora</span>';
+      }
+    }
+  };
+
+  // Se temos leitura recente (< 25s) do watchPosition, usa diretamente sem delay
+  if (lastKnownGpsPos && (Date.now() - lastKnownGpsPos.timestamp < 25000)) {
+    handleCoords(lastKnownGpsPos.latitude, lastKnownGpsPos.longitude, lastKnownGpsPos.accuracy, lastKnownGpsPos.timestamp);
+    return;
+  }
+
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      lastKnownGpsPos = {
+        latitude: pos.coords.latitude,
+        longitude: pos.coords.longitude,
+        accuracy: pos.coords.accuracy,
+        timestamp: pos.timestamp || Date.now()
+      };
+      handleCoords(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy, pos.timestamp);
     },
     (err) => {
-      isSendingGps = false;
       console.warn('Erro ao obter GPS:', err);
-      // If signal drops or GPS fails, keep last recorded position intact!
       showOfflineNotice(true);
       if (!isAutomatic && btn) {
         btn.disabled = false;
@@ -517,20 +580,24 @@ function transmitGpsLocation(tripId, isAutomatic = false) {
         alert('Não foi possível obter sinal de satélite. O último registro de localização foi mantido.');
       }
     },
-    { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 }
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 10000 }
   );
 }
 
-// OFFLINE QUEUE MANAGEMENT (Preserves last known point and queues points if signal drops)
+// OFFLINE QUEUE MANAGEMENT (Preserva pontos e descarrega quando a internet volta)
 function saveOfflineCheckin(tripId, point) {
   try {
     const key = `insanos_offline_points_${tripId}`;
     const queue = JSON.parse(localStorage.getItem(key) || '[]');
-    queue.push(point);
-    localStorage.setItem(key, JSON.stringify(queue));
-    console.log('Ponto salvo na fila offline. Mantendo último ponto conhecido.');
+    // Evita duplicatas idênticas no mesmo segundo
+    const isDup = queue.some(p => Math.abs(p.lat - point.lat) < 0.0001 && Math.abs(p.lng - point.lng) < 0.0001 && p.timestamp === point.timestamp);
+    if (!isDup) {
+      queue.push(point);
+      localStorage.setItem(key, JSON.stringify(queue.slice(-150))); // Guarda até 150 pontos
+      console.log('Ponto de passagem salvo na fila offline. Será sincronizado ao registrar sinal de internet.');
+    }
   } catch (e) {
-    console.error(e);
+    console.error('Erro ao salvar offline:', e);
   }
 }
 
@@ -553,7 +620,8 @@ async function syncOfflineCheckins(tripId) {
     if (res.ok) {
       localStorage.removeItem(key);
       showOfflineNotice(false);
-      loadTripData(tripId, true);
+      loadTripData(tripId, true, shareToken);
+      console.log(`✓ Sincronizados ${queue.length} pontos de passagem acumulados offline.`);
     }
   } catch (e) {
     console.warn('Tentativa de sincronização offline aguarda sinal de rede.');
@@ -575,18 +643,20 @@ function showOfflineNotice(isOffline) {
     if (badge) {
       badge.style.color = '#00e676';
       badge.style.background = 'rgba(0,230,118,0.1)';
-      badge.innerHTML = '📶 Sinal: Conectado';
+      badge.innerHTML = '📶 Sinal: Conectado (10s)';
     }
   }
 }
 
 function setupNetworkListeners(tripId) {
+  // Dispara imediatamente ao registrar sinal de internet
   window.addEventListener('online', () => {
     showOfflineNotice(false);
     if (currentTrip && isCreatorAuth && currentTrip.status === 'EM ANDAMENTO') {
       syncOfflineCheckins(tripId).finally(() => transmitGpsLocation(tripId, true));
     }
   });
+
   window.addEventListener('offline', () => {
     showOfflineNotice(true);
   });
