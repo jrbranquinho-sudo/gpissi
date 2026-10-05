@@ -169,6 +169,109 @@ ${urlFinal}
 *(Ficha válida por até 72h)*`;
 }
 
+function haversineDistanceKm(lat1, lon1, lat2, lon2) {
+  if (!isValidCoordinate(lat1, lon1) || !isValidCoordinate(lat2, lon2)) return Infinity;
+  const R = 6371;
+  const dLat = (Number(lat2) - Number(lat1)) * (Math.PI / 180);
+  const dLon = (Number(lon2) - Number(lon1)) * (Math.PI / 180);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(Number(lat1) * (Math.PI / 180)) * Math.cos(Number(lat2) * (Math.PI / 180)) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+function isAtDestination(lastPoint, destinoGeo, thresholdKm = 1.5) {
+  if (!lastPoint || !destinoGeo) return false;
+  const pLat = lastPoint.lat ?? lastPoint.latitude;
+  const pLng = lastPoint.lng ?? lastPoint.lon ?? lastPoint.longitude;
+  const dLat = destinoGeo.lat ?? destinoGeo.latitude;
+  const dLon = destinoGeo.lon ?? destinoGeo.lng ?? destinoGeo.longitude;
+  const dist = haversineDistanceKm(pLat, pLng, dLat, dLon);
+  return dist <= thresholdKm;
+}
+
+function parseEstimatedArrivalMs(viagem) {
+  if (!viagem) return null;
+  if (viagem.estimated_arrival_iso) {
+    const t = Date.parse(viagem.estimated_arrival_iso);
+    if (!Number.isNaN(t)) return t;
+  }
+
+  const prevStr = String(viagem.previsao_chegada || '');
+  const match = prevStr.match(/(\d{1,2}):(\d{2})/);
+  if (!match) return null;
+
+  const [_, arrH, arrM] = match;
+  const baseDateStr = viagem.data_saida
+    ? String(viagem.data_saida).split('T')[0]
+    : (viagem.created_at ? String(viagem.created_at).split('T')[0] : new Date().toISOString().split('T')[0]);
+
+  const [y, mo, d] = baseDateStr.split('-').map(Number);
+  if (!y || !mo || !d) return null;
+
+  const arrivalDate = new Date(y, mo - 1, d, Number(arrH), Number(arrM), 0, 0);
+
+  if (viagem.hora_saida) {
+    const [depH, depM] = String(viagem.hora_saida).split(':').map(Number);
+    if (Number.isFinite(depH) && (Number(arrH) < depH || (Number(arrH) === depH && Number(arrM) < (depM || 0)))) {
+      arrivalDate.setDate(arrivalDate.getDate() + 1);
+    }
+  }
+
+  return arrivalDate.getTime();
+}
+
+function evaluateTripOverdue(viagem, nowMs = Date.now(), toleranceMinutes = 30) {
+  if (!viagem || viagem.status !== 'EM ANDAMENTO') {
+    return {
+      isOverdue: false,
+      overdueMinutes: 0,
+      arrivedAtDestination: viagem?.status === 'CONCLUÍDA',
+      estimatedArrivalMs: null,
+      lastLocation: null
+    };
+  }
+
+  const checkins = Array.isArray(viagem.checkins) ? viagem.checkins : [];
+  const lastLocation = viagem.last_location || (checkins.length > 0 ? checkins[checkins.length - 1] : null);
+
+  const arrived = isAtDestination(lastLocation, viagem.destino_geo);
+  if (arrived) {
+    return {
+      isOverdue: false,
+      overdueMinutes: 0,
+      arrivedAtDestination: true,
+      estimatedArrivalMs: null,
+      lastLocation
+    };
+  }
+
+  const arrivalMs = parseEstimatedArrivalMs(viagem);
+  if (!arrivalMs) {
+    return {
+      isOverdue: false,
+      overdueMinutes: 0,
+      arrivedAtDestination: false,
+      estimatedArrivalMs: null,
+      lastLocation
+    };
+  }
+
+  const toleranceMs = toleranceMinutes * 60 * 1000;
+  const isOverdue = nowMs > (arrivalMs + toleranceMs);
+  const overdueMinutes = isOverdue ? Math.floor((nowMs - arrivalMs) / 60000) : 0;
+
+  return {
+    isOverdue,
+    overdueMinutes,
+    arrivedAtDestination: false,
+    estimatedArrivalMs: arrivalMs,
+    lastLocation
+  };
+}
+
 const gpsUtils = {
   isValidCoordinate,
   extractMunicipality,
@@ -177,7 +280,11 @@ const gpsUtils = {
   distToSegmentKm,
   isPointInRouteCorridor,
   formatDateBR,
-  buildWhatsAppProtocolMessage
+  buildWhatsAppProtocolMessage,
+  haversineDistanceKm,
+  isAtDestination,
+  parseEstimatedArrivalMs,
+  evaluateTripOverdue
 };
 
 if (typeof module !== 'undefined' && module.exports) module.exports = gpsUtils;

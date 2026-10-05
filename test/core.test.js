@@ -128,3 +128,59 @@ test('buildWhatsAppProtocolMessage gera a ficha completa com formatação oficia
   assert.match(msg, /https:\/\/gpissi\.vercel\.app\/tracker\?id=INS-AMMH-9638/);
   assert.match(msg, /\*\(Ficha válida por até 72h\)\*/);
 });
+
+test('haversineDistanceKm e isAtDestination calculam proximidade do destino', () => {
+  const p1 = { lat: -23.5505, lon: -46.6333 }; // Marco Zero SP
+  const p2 = { lat: -23.5510, lon: -46.6340 }; // ~100 metros
+  const p3 = { lat: -22.9068, lon: -43.1729 }; // Rio de Janeiro (~360 km)
+
+  const distClose = gps.haversineDistanceKm(p1.lat, p1.lon, p2.lat, p2.lon);
+  assert.ok(distClose < 0.2);
+  assert.equal(gps.isAtDestination(p2, p1, 1.5), true);
+
+  const distFar = gps.haversineDistanceKm(p1.lat, p1.lon, p3.lat, p3.lon);
+  assert.ok(distFar > 300 && distFar < 400);
+  assert.equal(gps.isAtDestination(p3, p1, 1.5), false);
+});
+
+test('evaluateTripOverdue identifica quando o piloto ultrapassa a previsão sem chegar', () => {
+  const baseTrip = {
+    id: 'TRIP-TEST-1',
+    status: 'EM ANDAMENTO',
+    data_saida: '2026-10-05',
+    hora_saida: '08:00',
+    previsao_chegada: '12:00 (400 km | 4h)',
+    destino_geo: { lat: -17.7408, lon: -48.6381 },
+    checkins: [
+      { lat: -17.326, lng: -48.422, timestamp: '2026-10-05T11:30:00Z', cidade: 'Palmelo - GO' }
+    ]
+  };
+
+  // 12:15 -> previsão é 12:00, com tolerância de 30m limite é 12:30 -> NÃO deve alertar ainda
+  const time1215 = new Date('2026-10-05T12:15:00').getTime();
+  const res1215 = gps.evaluateTripOverdue(baseTrip, time1215, 30);
+  assert.equal(res1215.isOverdue, false);
+
+  // 12:45 -> 45 minutos após a previsão (ultrapassou tolerância de 30m) -> DEVE alertar
+  const time1245 = new Date('2026-10-05T12:45:00').getTime();
+  const res1245 = gps.evaluateTripOverdue(baseTrip, time1245, 30);
+  assert.equal(res1245.isOverdue, true);
+  assert.equal(res1245.overdueMinutes, 45);
+  assert.equal(res1245.lastLocation.cidade, 'Palmelo - GO');
+
+  // Se o piloto chegou no destino (distância < 1.5km), não deve alertar mesmo após o horário
+  const arrivedTrip = {
+    ...baseTrip,
+    checkins: [
+      { lat: -17.7405, lng: -48.6380, timestamp: '2026-10-05T12:40:00Z', cidade: 'Caldas Novas - GO' }
+    ]
+  };
+  const resArrived = gps.evaluateTripOverdue(arrivedTrip, time1245, 30);
+  assert.equal(resArrived.isOverdue, false);
+  assert.equal(resArrived.arrivedAtDestination, true);
+
+  // Se a viagem está CONCLUÍDA, não deve alertar
+  const closedTrip = { ...baseTrip, status: 'CONCLUÍDA' };
+  const resClosed = gps.evaluateTripOverdue(closedTrip, time1245, 30);
+  assert.equal(resClosed.isOverdue, false);
+});

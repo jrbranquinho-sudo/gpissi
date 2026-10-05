@@ -19,6 +19,14 @@
   <meta name="apple-mobile-web-app-title" content="GPISSI">
   <meta name="theme-color" content="#ff6600">
   <meta name="mobile-web-app-capable" content="yes">
+  <script>
+    // Valida autenticação do usuário logado
+    fetch('/api/auth/me').then(res => {
+      if (!res.ok) window.location.replace('/conta');
+    }).catch(() => {
+      window.location.replace('/conta');
+    });
+  </script>
   <style>
     /* DASHBOARD SPECIFIC STYLES */
     .dash-kpis {
@@ -235,6 +243,45 @@
       text-align: center;
       color: var(--text-muted);
     }
+
+    /* OVERDUE ALERTS (MONITORAMENTO DE SEGURANÇA & ATRASO) */
+    .overdue-banner-box {
+      background: rgba(220, 38, 38, 0.12);
+      border: 2px solid #ef4444;
+      border-radius: var(--radius-md);
+      padding: 1.25rem 1.5rem;
+      margin-bottom: 2rem;
+      box-shadow: 0 0 25px rgba(239, 68, 68, 0.35);
+      animation: alert-pulse 2s infinite ease-in-out;
+    }
+
+    @keyframes alert-pulse {
+      0% { box-shadow: 0 0 15px rgba(239, 68, 68, 0.25); border-color: #ef4444; }
+      50% { box-shadow: 0 0 35px rgba(239, 68, 68, 0.6); border-color: #f87171; }
+      100% { box-shadow: 0 0 15px rgba(239, 68, 68, 0.25); border-color: #ef4444; }
+    }
+
+    .overdue-card {
+      background: #11141a;
+      border: 1px solid rgba(239, 68, 68, 0.4);
+      border-left: 5px solid #ef4444;
+      border-radius: var(--radius-sm);
+      padding: 1.15rem;
+      margin-top: 0.85rem;
+      transition: all 0.2s;
+    }
+
+    .overdue-card:hover {
+      border-color: #ef4444;
+      box-shadow: 0 5px 20px rgba(239, 68, 68, 0.25);
+    }
+
+    .dash-card.active-trip.is-overdue {
+      border-left: 5px solid #ef4444 !important;
+      border-color: rgba(239, 68, 68, 0.6);
+      background: linear-gradient(135deg, rgba(239, 68, 68, 0.1) 0%, var(--bg-card) 60%);
+      animation: alert-pulse 2.5s infinite ease-in-out;
+    }
   </style>
 </head>
 <body>
@@ -277,6 +324,36 @@
       <p class="protocol-subtitle">
         Monitore as viagens ativas na estrada e as viagens encerradas recentemente. <strong>Clique em qualquer viagem para abrir o Radar no mapa.</strong>
       </p>
+      <div style="margin-top: 1.1rem; display: flex; justify-content: center; gap: 0.8rem; flex-wrap: wrap;">
+        <a href="/novo" class="btn-primary-insano" style="text-decoration: none; padding: 0.75rem 1.6rem; font-size: 0.95rem; display: inline-flex; align-items: center; gap: 0.5rem; border-radius: var(--radius-sm); box-shadow: 0 4px 15px rgba(255, 102, 0, 0.35);">
+          <img src="/images/caveirasembg.png" alt="Caveira" style="width: 22px; height: 22px; object-fit: contain;">
+          <span>➕ ABRIR NOVO PROTOCOLO</span> ➔
+        </a>
+        <a href="/radar" class="btn-secondary" style="text-decoration: none; padding: 0.75rem 1.4rem; font-size: 0.95rem; display: inline-flex; align-items: center; gap: 0.5rem; border-radius: var(--radius-sm);">
+          <span>📡 VER RADAR AO VIVO</span>
+        </a>
+      </div>
+    </div>
+
+    <!-- OVERDUE / SAFETY ALERTS (MONITORAMENTO DE ATRASO) -->
+    <div id="dashOverdueAlertsContainer" class="overdue-banner-box" style="display: none;">
+      <div style="display: flex; align-items: flex-start; gap: 0.85rem;">
+        <span style="font-size: 2rem; line-height: 1;">🚨</span>
+        <div style="flex: 1;">
+          <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem;">
+            <h2 style="font-family: var(--font-heading); font-size: 1.25rem; font-weight: 900; color: #ff4d4d; margin: 0; text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; gap: 0.4rem;">
+              <span>ALERTA DE SEGURANÇA NA ESTRADA</span> &bull; <span style="color: #fff;">INTEGRANTE EM ATRASO</span>
+            </h2>
+            <span id="overdueBadgeCount" style="background: #ef4444; color: #fff; font-size: 0.8rem; font-weight: 800; padding: 0.25rem 0.65rem; border-radius: 4px;">
+              0 EM ALERTA
+            </span>
+          </div>
+          <p style="font-size: 0.88rem; color: #fca5a5; margin-top: 0.3rem; margin-bottom: 0;">
+            Atenção a todos os integrantes: o piloto ultrapassou a previsão de chegada estimada sem confirmação de conclusão ou chegada ao destino.
+          </p>
+        </div>
+      </div>
+      <div id="overdueTripsList" style="display: flex; flex-direction: column; gap: 1rem; margin-top: 1rem;"></div>
     </div>
 
     <!-- KPIS ROW -->
@@ -373,6 +450,13 @@
         fetchDashboardTrips(true);
       }, 10000);
 
+      // Re-avalia o status de atraso a cada 30 segundos mesmo sem nova resposta de rede
+      setInterval(() => {
+        if (allTrips.length > 0) {
+          renderDashboard(document.getElementById('dashSearch').value.toLowerCase().trim());
+        }
+      }, 30000);
+
       document.getElementById('dashSearch').addEventListener('input', (e) => {
         renderDashboard(e.target.value.toLowerCase().trim());
       });
@@ -386,7 +470,6 @@
           return;
         }
         if (!res.ok) throw new Error('Falha ao obter lista de viagens');
-        // The server already sorts from most recent to oldest
         allTrips = await res.json();
         updateKpis();
         renderDashboard(document.getElementById('dashSearch').value.toLowerCase().trim());
@@ -414,6 +497,17 @@
       return dateString;
     }
 
+    function formatTimeAgo(timestamp) {
+      if (!timestamp) return 'Sem registro';
+      const diffMs = Date.now() - new Date(timestamp).getTime();
+      const diffMins = Math.floor(diffMs / 60000);
+      if (diffMins < 1) return 'agora há pouco';
+      if (diffMins === 1) return 'há 1 minuto';
+      if (diffMins < 60) return `há ${diffMins} minutos`;
+      const diffHours = Math.floor(diffMins / 60);
+      return `há ${diffHours}h ${diffMins % 60}min`;
+    }
+
     function renderDashboard(searchTerm = '') {
       let filtered = allTrips;
 
@@ -426,12 +520,144 @@
         );
       }
 
-      // Separate into active and closed
+      // Reavalia atraso em tempo real com base no relógio local
+      const nowMs = Date.now();
       const activeTrips = filtered.filter(t => t.status === 'EM ANDAMENTO');
       const closedTrips = filtered.filter(t => t.status === 'CONCLUÍDA');
 
+      const overdueTrips = [];
+      activeTrips.forEach(t => {
+        if (typeof GPISSIGps !== 'undefined' && GPISSIGps.evaluateTripOverdue) {
+          const evalRes = GPISSIGps.evaluateTripOverdue(t, nowMs, 30);
+          t.is_overdue = evalRes.isOverdue;
+          t.overdue_minutes = evalRes.overdueMinutes;
+          if (evalRes.lastLocation) t.last_location = evalRes.lastLocation;
+        }
+        if (t.is_overdue) {
+          overdueTrips.push(t);
+        }
+      });
+
+      renderOverdueList(overdueTrips);
       renderActiveList(activeTrips);
       renderClosedList(closedTrips);
+    }
+
+    function renderOverdueList(overdueTrips) {
+      const container = document.getElementById('dashOverdueAlertsContainer');
+      const listEl = document.getElementById('overdueTripsList');
+      const badgeCount = document.getElementById('overdueBadgeCount');
+      if (!container || !listEl) return;
+
+      if (overdueTrips.length === 0) {
+        container.style.display = 'none';
+        listEl.innerHTML = '';
+        return;
+      }
+
+      container.style.display = 'block';
+      if (badgeCount) {
+        badgeCount.textContent = `${overdueTrips.length} INTEGRANTE${overdueTrips.length > 1 ? 'S' : ''} EM ALERTA`;
+      }
+
+      listEl.innerHTML = overdueTrips.map(t => {
+        let lastLocCity = 'Ponto de Partida';
+        let lastLocTime = t.created_at;
+        if (t.last_location) {
+          lastLocCity = t.last_location.cidade || t.last_location.descricao || 'Em deslocamento na Rodovia';
+          if (t.last_location.timestamp) lastLocTime = t.last_location.timestamp;
+        } else if (t.checkins && t.checkins.length > 0) {
+          const lastChk = t.checkins[t.checkins.length - 1];
+          lastLocCity = lastChk.cidade || lastChk.descricao || 'Em deslocamento na Rodovia';
+          if (lastChk.timestamp) lastLocTime = lastChk.timestamp;
+        }
+
+        let timeStr = '--:--';
+        if (lastLocTime) {
+          const d = new Date(lastLocTime);
+          timeStr = `${d.toLocaleDateString('pt-BR')} às ${d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
+        }
+        const timeAgo = formatTimeAgo(lastLocTime);
+
+        const shareParam = t.share_token ? `&share=${encodeURIComponent(t.share_token)}` : '';
+        const tripUrl = `/tracker?id=${encodeURIComponent(t.id)}${shareParam}`;
+
+        const rawPilotTel = t.telefone ? t.telefone.replace(/\D/g, '') : '';
+        const pilotPhoneBtn = rawPilotTel ? `
+          <a href="tel:${rawPilotTel}" class="btn-secondary" style="text-decoration: none; padding: 0.6rem 1rem; font-size: 0.88rem; display: inline-flex; align-items: center; gap: 0.35rem; border-color: rgba(255,255,255,0.2);">
+            <span>📱</span> Ligar Piloto: ${t.telefone}
+          </a>
+        ` : '';
+
+        const rawEmergTel = t.emergencia_telefone ? t.emergencia_telefone.replace(/\D/g, '') : '';
+        const emergencyBtn = rawEmergTel ? `
+          <a href="tel:${rawEmergTel}" class="btn-secondary" style="text-decoration: none; padding: 0.6rem 1rem; font-size: 0.88rem; display: inline-flex; align-items: center; gap: 0.35rem; border-color: rgba(239,68,68,0.5); color: #fca5a5;">
+            <span>🆘</span> Contato Emergência: ${t.emergencia_contato || 'Familiar'} (${t.emergencia_telefone})
+          </a>
+        ` : '';
+
+        let vDesc = t.transporte_detalhe || '';
+        if (!vDesc && t.transporte_placa) vDesc = `Placa: ${t.transporte_placa}`;
+
+        return `
+          <div class="overdue-card">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 0.75rem;">
+              <div style="display: flex; align-items: center; gap: 0.75rem;">
+                <img src="/images/caveirasembg.png" alt="Caveira" style="width: 34px; height: 34px; object-fit: contain;">
+                <div>
+                  <div style="font-family: var(--font-heading); font-size: 1.35rem; font-weight: 800; color: #fff;">
+                    ${t.nome_colete}
+                  </div>
+                  <div style="font-size: 0.85rem; font-weight: 700; color: #f87171;">
+                    ${t.grau || 'Integrante'} &bull; ${t.transporte_tipo || 'MOTO'} ${vDesc ? `(${vDesc})` : ''}
+                  </div>
+                </div>
+              </div>
+
+              <div class="status-badge" style="background: rgba(239, 68, 68, 0.25); border: 1px solid #ef4444; color: #fff; font-weight: 800; font-size: 0.85rem; padding: 0.4rem 0.85rem;">
+                <span class="status-dot" style="background: #ef4444; box-shadow: 0 0 10px #ef4444;"></span>
+                EM ATRASO (+${t.overdue_minutes} MIN)
+              </div>
+            </div>
+
+            <div class="dash-route-box" style="margin: 0.85rem 0; background: rgba(0,0,0,0.3); border-color: rgba(239, 68, 68, 0.35);">
+              <strong style="color: #fff;">${t.origem}</strong>
+              <span class="dash-route-arrow" style="color: #ef4444;">➔</span>
+              <strong style="color: #fff;">${t.destino}</strong>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 0.75rem; background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.25); border-radius: var(--radius-sm); padding: 0.85rem; margin-bottom: 0.85rem;">
+              <div>
+                <div style="font-size: 0.78rem; color: #fca5a5; text-transform: uppercase; font-weight: 700;">⏱️ Previsão de Chegada:</div>
+                <div style="font-size: 0.95rem; font-weight: 700; color: #fff; margin-top: 0.15rem;">
+                  ${t.previsao_chegada || 'A definir'}
+                </div>
+                <div style="font-size: 0.8rem; color: #f87171; margin-top: 0.1rem; font-weight: 600;">
+                  ⚠️ Atrasado há mais de <strong>${t.overdue_minutes} minutos</strong>
+                </div>
+              </div>
+
+              <div>
+                <div style="font-size: 0.78rem; color: #fca5a5; text-transform: uppercase; font-weight: 700;">📍 Última Localização Registrada:</div>
+                <div style="font-size: 0.95rem; font-weight: 700; color: #fff; margin-top: 0.15rem;">
+                  ${lastLocCity}
+                </div>
+                <div style="font-size: 0.8rem; color: #cbd5e1; margin-top: 0.1rem;">
+                  ${timeStr} (${timeAgo})
+                </div>
+              </div>
+            </div>
+
+            <div style="display: flex; gap: 0.6rem; flex-wrap: wrap;">
+              <a href="${tripUrl}" class="btn-primary-insano" style="text-decoration: none; padding: 0.65rem 1.25rem; font-size: 0.88rem; flex: 1; min-width: 220px; justify-content: center; background: #dc2626; border-color: #ef4444; box-shadow: 0 4px 15px rgba(239, 68, 68, 0.4);">
+                🚨 ACOMPANHAR NO RADAR AGORA ➔
+              </a>
+              ${pilotPhoneBtn}
+              ${emergencyBtn}
+            </div>
+          </div>
+        `;
+      }).join('');
     }
 
     function renderActiveList(trips) {
@@ -450,42 +676,54 @@
 
       container.innerHTML = trips.map(t => {
         let lastLoc = 'Partida';
-        if (t.checkins && t.checkins.length > 1) {
+        if (t.last_location) {
+          lastLoc = t.last_location.cidade || t.last_location.descricao || 'Em deslocamento na Rodovia';
+        } else if (t.checkins && t.checkins.length > 1) {
           const last = t.checkins[t.checkins.length - 1];
           lastLoc = last.cidade || 'Em deslocamento na Rodovia';
         }
         const shareParam = t.share_token ? `&share=${encodeURIComponent(t.share_token)}` : '';
         const tripUrl = `/tracker?id=${encodeURIComponent(t.id)}${shareParam}`;
 
+        const isOverdue = Boolean(t.is_overdue);
+        const cardClass = isOverdue ? 'dash-card active-trip is-overdue' : 'dash-card active-trip';
+        const badgeHtml = isOverdue ? `
+          <div class="status-badge" style="padding: 0.25rem 0.65rem; font-size: 0.78rem; background: rgba(239, 68, 68, 0.25); border: 1px solid #ef4444; color: #fff; font-weight: 800;">
+            <span class="status-dot" style="background: #ef4444; box-shadow: 0 0 8px #ef4444;"></span> ATRASO (+${t.overdue_minutes}M)
+          </div>
+        ` : `
+          <div class="status-badge open" style="padding: 0.25rem 0.65rem; font-size: 0.78rem;">
+            <span class="status-dot"></span> NA ESTRADA
+          </div>
+        `;
+
         return `
-          <a href="${tripUrl}" class="dash-card active-trip" style="text-decoration: none; color: inherit; display: flex;">
+          <a href="${tripUrl}" class="${cardClass}" style="text-decoration: none; color: inherit; display: flex;">
             <div class="dash-card-pilot">
               <div>
                 <div class="dash-pilot-name">
                   <img src="/images/caveirasembg.png" alt="Caveira" class="skull-icon-xs">
                   ${t.nome_colete}
                 </div>
-                <div class="dash-pilot-grau">${t.grau || 'Integrante'}</div>
+                <div class="dash-pilot-grau" style="${isOverdue ? 'color: #f87171;' : ''}">${t.grau || 'Integrante'}</div>
               </div>
-              <div class="status-badge open" style="padding: 0.25rem 0.65rem; font-size: 0.78rem;">
-                <span class="status-dot"></span> NA ESTRADA
-              </div>
+              ${badgeHtml}
             </div>
 
-            <div class="dash-route-box">
+            <div class="dash-route-box" style="${isOverdue ? 'border-color: rgba(239, 68, 68, 0.4);' : ''}">
               <strong style="color: #fff;">${t.origem}</strong>
-              <span class="dash-route-arrow">➔</span>
+              <span class="dash-route-arrow" style="${isOverdue ? 'color: #ef4444;' : ''}">➔</span>
               <strong style="color: #fff;">${t.destino}</strong>
             </div>
 
             <div class="dash-meta-row">
               <span>📅 Saída: ${formatDateBR(t.data_saida)} às ${t.hora_saida || '--:--'}</span>
-              <span>🏁 Previsão: ${t.previsao_chegada || 'Conforme tráfego'}</span>
+              <span>🏁 Previsão: <strong style="${isOverdue ? 'color: #f87171;' : ''}">${t.previsao_chegada || 'Conforme tráfego'}</strong></span>
             </div>
 
             <div style="font-size: 0.82rem; color: #cbd5e1; display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #1e2430; padding-top: 0.5rem;">
-              <span>📍 Ponto: <strong style="color: var(--issi-orange-bright);">${lastLoc}</strong></span>
-              <span class="dash-click-hint">Abrir no Radar ➔</span>
+              <span>📍 Ponto: <strong style="color: ${isOverdue ? '#ff4d4d' : 'var(--issi-orange-bright)'};">${lastLoc}</strong></span>
+              <span class="dash-click-hint" style="${isOverdue ? 'color: #ff4d4d;' : ''}">Abrir no Radar ➔</span>
             </div>
           </a>
         `;

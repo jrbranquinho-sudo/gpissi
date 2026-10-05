@@ -70,6 +70,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
   setupEventListeners(tripId);
   setupNetworkListeners(tripId);
+
+  // Inicializa verificação de fila offline
+  const offlineCount = getOfflineQueue(tripId).length;
+  if (!navigator.onLine || offlineCount > 0) {
+    showOfflineNotice(!navigator.onLine, offlineCount);
+  }
+  if (navigator.onLine && offlineCount > 0) {
+    syncOfflineCheckins(tripId);
+  }
 });
 
 // Initialize MapLibre GL with OpenFreeMap (Liberty Style)
@@ -98,9 +107,12 @@ function initOpenFreeMap() {
     if (map) map.resize();
   });
 
-  document.getElementById('btnFitMap').addEventListener('click', () => {
-    fitRouteBounds();
-  });
+  const btnFitMap = document.getElementById('btnFitMap');
+  if (btnFitMap) {
+    btnFitMap.addEventListener('click', () => {
+      fitRouteBounds();
+    });
+  }
 }
 
 async function loadTripData(tripId, isSilent = false, shareToken = '') {
@@ -155,43 +167,55 @@ function formatDateBR(dateString) {
 }
 
 function renderTripDetails(trip) {
-  document.getElementById('heroTripTitle').innerHTML = `🏍️ INSANO NA ESTRADA - ${trip.nome_colete.toUpperCase()} &bull; <span class="gp-blue">GP</span><span class="issi-orange">ISSI</span>`;
-  document.getElementById('tripIdBadge').textContent = `ID: ${trip.id}`;
+  const heroTripTitle = document.getElementById('heroTripTitle');
+  if (heroTripTitle) heroTripTitle.innerHTML = `🏍️ INSANO NA ESTRADA - ${(trip.nome_colete || '').toUpperCase()} &bull; <span class="gp-blue">GP</span><span class="issi-orange">ISSI</span>`;
+  
+  const tripIdBadge = document.getElementById('tripIdBadge');
+  if (tripIdBadge) tripIdBadge.textContent = `ID: ${trip.id}`;
   
   if (trip.created_at) {
     const d = new Date(trip.created_at);
-    document.getElementById('tripTimestamp').textContent = `Registrado em: ${d.toLocaleDateString('pt-BR')} às ${d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
+    const tripTimestamp = document.getElementById('tripTimestamp');
+    if (tripTimestamp) tripTimestamp.textContent = `Registrado em: ${d.toLocaleDateString('pt-BR')} às ${d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
   }
 
   // Status Badge
   const statusContainer = document.getElementById('tripStatusContainer');
+  const closedNoticeCard = document.getElementById('closedNoticeCard');
   if (trip.status === 'CONCLUÍDA') {
-    statusContainer.innerHTML = `
-      <div class="status-badge closed">
-        <span class="status-dot"></span>
-        <span>VIAGEM CONCLUÍDA (CHEGOU COM SEGURANÇA)</span>
-      </div>
-    `;
-    document.getElementById('closedNoticeCard').style.display = 'block';
+    if (statusContainer) {
+      statusContainer.innerHTML = `
+        <div class="status-badge closed">
+          <span class="status-dot"></span>
+          <span>VIAGEM CONCLUÍDA (CHEGOU COM SEGURANÇA)</span>
+        </div>
+      `;
+    }
+    if (closedNoticeCard) closedNoticeCard.style.display = 'block';
     if (trip.closed_at) {
       const d = new Date(trip.closed_at);
-      document.getElementById('closedTimestamp').textContent = `Encerramento registrado em: ${d.toLocaleDateString('pt-BR')} às ${d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
+      const closedTimestamp = document.getElementById('closedTimestamp');
+      if (closedTimestamp) closedTimestamp.textContent = `Encerramento registrado em: ${d.toLocaleDateString('pt-BR')} às ${d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
     }
     if (trip.encerramento_motivo) {
-      document.getElementById('closedNoticeText').textContent = `"${trip.encerramento_motivo}"`;
+      const closedNoticeText = document.getElementById('closedNoticeText');
+      if (closedNoticeText) closedNoticeText.textContent = `"${trip.encerramento_motivo}"`;
     }
     stop5MinuteAutoTracking();
   } else {
-    statusContainer.innerHTML = `
-      <div class="status-badge open">
-        <span class="status-dot"></span>
-        <span>EM ANDAMENTO (NA ESTRADA)</span>
-      </div>
-    `;
-    document.getElementById('closedNoticeCard').style.display = 'none';
+    if (statusContainer) {
+      statusContainer.innerHTML = `
+        <div class="status-badge open">
+          <span class="status-dot"></span>
+          <span>EM ANDAMENTO (NA ESTRADA)</span>
+        </div>
+      `;
+    }
+    if (closedNoticeCard) closedNoticeCard.style.display = 'none';
   }
 
-  document.getElementById('statRouteName').textContent = `${trip.origem} ➔ ${trip.destino}`;
+  const statRouteName = document.getElementById('statRouteName');
+  if (statRouteName) statRouteName.textContent = `${trip.origem || '--'} ➔ ${trip.destino || '--'}`;
 
   // Estimativa prévia imediata de distância e duração (evita ficar 'Calculando...')
   if (trip.origem_geo && trip.destino_geo) {
@@ -214,50 +238,68 @@ function renderTripDetails(trip) {
   }
 
   // Integrante
-  document.getElementById('valNomeColete').textContent = trip.nome_colete;
-  document.getElementById('valGrau').textContent = trip.grau || 'CAMISETA - X';
+  const valNomeColete = document.getElementById('valNomeColete');
+  if (valNomeColete) valNomeColete.textContent = trip.nome_colete || '--';
+  const valGrau = document.getElementById('valGrau');
+  if (valGrau) valGrau.textContent = trip.grau || 'CAMISETA - X';
   
   const telContainer = document.getElementById('valTelefone');
-  if (trip.telefone) {
-    const rawDigits = trip.telefone.replace(/\D/g, '');
-    const fullWaNumber = rawDigits.startsWith('55') ? rawDigits : `55${rawDigits}`;
-    telContainer.innerHTML = `<a href="https://wa.me/${fullWaNumber}" target="_blank" rel="noopener noreferrer" style="color: #25d366; text-decoration: none; display: inline-flex; align-items: center; gap: 0.35rem; font-weight: 700; white-space: nowrap;" title="Conversar no WhatsApp"><span>📱</span> <span>${trip.telefone}</span></a>`;
-  } else {
-    telContainer.textContent = 'Não informado';
+  if (telContainer) {
+    if (trip.telefone) {
+      const rawDigits = trip.telefone.replace(/\D/g, '');
+      const fullWaNumber = rawDigits.startsWith('55') ? rawDigits : `55${rawDigits}`;
+      telContainer.innerHTML = `<a href="https://wa.me/${fullWaNumber}" target="_blank" rel="noopener noreferrer" style="color: #25d366; text-decoration: none; display: inline-flex; align-items: center; gap: 0.35rem; font-weight: 700; white-space: nowrap;" title="Conversar no WhatsApp"><span>📱</span> <span>${trip.telefone}</span></a>`;
+    } else {
+      telContainer.textContent = 'Não informado';
+    }
   }
 
-  document.getElementById('valTransporte').textContent = trip.transporte_tipo;
+  const valTransporte = document.getElementById('valTransporte');
+  if (valTransporte) valTransporte.textContent = trip.transporte_tipo || '--';
   
   let vDesc = trip.transporte_detalhe;
   if (!vDesc && trip.transporte_placa) {
     vDesc = `Placa: ${trip.transporte_placa}`;
   }
-  document.getElementById('valTransporteDetalhe').textContent = vDesc || 'Nenhum detalhe informado';
-  document.getElementById('valAcompanhante').textContent = trip.vai_acompanhado === 'Sim' ? (trip.quem_vai_junto || 'Sim (acompanhado)') : 'Não (Solo)';
+  const valTransporteDetalhe = document.getElementById('valTransporteDetalhe');
+  if (valTransporteDetalhe) valTransporteDetalhe.textContent = vDesc || 'Nenhum detalhe informado';
+  const valAcompanhante = document.getElementById('valAcompanhante');
+  if (valAcompanhante) valAcompanhante.textContent = trip.vai_acompanhado === 'Sim' ? (trip.quem_vai_junto || 'Sim (acompanhado)') : 'Não (Solo)';
 
   // Rota
-  document.getElementById('valOrigem').textContent = trip.origem;
-  document.getElementById('valDestino').textContent = trip.destino;
-  document.getElementById('valSaida').textContent = `${formatDateBR(trip.data_saida)} às ${trip.hora_saida || 'A definir'}`;
-  document.getElementById('valPrevisao').textContent = trip.previsao_chegada || 'Conforme tráfego';
-  document.getElementById('valRetorno').textContent = formatDateBR(trip.data_retorno);
+  const valOrigem = document.getElementById('valOrigem');
+  if (valOrigem) valOrigem.textContent = trip.origem || '--';
+  const valDestino = document.getElementById('valDestino');
+  if (valDestino) valDestino.textContent = trip.destino || '--';
+  const valSaida = document.getElementById('valSaida');
+  if (valSaida) valSaida.textContent = `${formatDateBR(trip.data_saida)} às ${trip.hora_saida || 'A definir'}`;
+  const valPrevisao = document.getElementById('valPrevisao');
+  if (valPrevisao) valPrevisao.textContent = trip.previsao_chegada || 'Conforme tráfego';
+  const valRetorno = document.getElementById('valRetorno');
+  if (valRetorno) valRetorno.textContent = formatDateBR(trip.data_retorno);
 
   // Emergência
-  document.getElementById('valEmergenciaContato').textContent = trip.emergencia_contato || 'Não informado';
-  document.getElementById('valEmergenciaTel').textContent = trip.emergencia_telefone || 'Não informado';
+  const valEmergenciaContato = document.getElementById('valEmergenciaContato');
+  if (valEmergenciaContato) valEmergenciaContato.textContent = trip.emergencia_contato || 'Não informado';
+  const valEmergenciaTel = document.getElementById('valEmergenciaTel');
+  if (valEmergenciaTel) valEmergenciaTel.textContent = trip.emergencia_telefone || 'Não informado';
 
   const callBtn = document.getElementById('btnCallEmergencia');
-  if (trip.emergencia_telefone) {
-    const rawTel = trip.emergencia_telefone.replace(/\D/g, '');
-    callBtn.href = `tel:${rawTel}`;
-    callBtn.style.display = 'inline-flex';
-  } else {
-    callBtn.style.display = 'none';
+  if (callBtn) {
+    if (trip.emergencia_telefone) {
+      const rawTel = trip.emergencia_telefone.replace(/\D/g, '');
+      callBtn.href = `tel:${rawTel}`;
+      callBtn.style.display = 'inline-flex';
+    } else {
+      callBtn.style.display = 'none';
+    }
   }
 
   // Notas
-  document.getElementById('valNotas').textContent = trip.observacoes_notas || 'Nenhuma anotação informada.';
-  document.getElementById('valResumo').textContent = trip.observacoes_resumo || 'Sem relato prévio.';
+  const valNotas = document.getElementById('valNotas');
+  if (valNotas) valNotas.textContent = trip.observacoes_notas || 'Nenhuma anotação informada.';
+  const valResumo = document.getElementById('valResumo');
+  if (valResumo) valResumo.textContent = trip.observacoes_resumo || 'Sem relato prévio.';
 
   // Checkins & Last GPS position
   if (trip.checkins && trip.checkins.length > 0) {
@@ -370,17 +412,23 @@ function updateExternalMapLinks(trip) {
   }
 
   const googleBtn = document.getElementById('btnOpenGoogleMaps');
-  if (trip.origem && trip.destino) {
-    googleBtn.href = `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(trip.origem)}&destination=${encodeURIComponent(trip.destino)}`;
-  } else {
-    googleBtn.href = `https://www.google.com/maps/search/?api=1&query=${targetLat},${targetLng}`;
+  if (googleBtn) {
+    if (trip.origem && trip.destino) {
+      googleBtn.href = `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(trip.origem)}&destination=${encodeURIComponent(trip.destino)}`;
+    } else {
+      googleBtn.href = `https://www.google.com/maps/search/?api=1&query=${targetLat},${targetLng}`;
+    }
   }
 
   const wazeBtn = document.getElementById('btnOpenWaze');
-  wazeBtn.href = `https://waze.com/ul?ll=${targetLat},${targetLng}&navigate=yes`;
+  if (wazeBtn) {
+    wazeBtn.href = `https://waze.com/ul?ll=${targetLat},${targetLng}&navigate=yes`;
+  }
 
   const appleBtn = document.getElementById('btnOpenAppleMaps');
-  appleBtn.href = `https://maps.apple.com/?daddr=${targetLat},${targetLng}&dirflg=d`;
+  if (appleBtn) {
+    appleBtn.href = `https://maps.apple.com/?daddr=${targetLat},${targetLng}&dirflg=d`;
+  }
 }
 
 function updateCreatorPanelUI(trip) {
@@ -398,13 +446,13 @@ function updateCreatorPanelUI(trip) {
   }
 
   if (trip.status === 'CONCLUÍDA') {
-    activeActions.style.display = 'none';
-    authPrompt.style.display = 'none';
+    if (activeActions) activeActions.style.display = 'none';
+    if (authPrompt) authPrompt.style.display = 'none';
     if (gpsStatusBox) gpsStatusBox.style.display = 'none';
-    authMsg.innerHTML = '<span style="color: var(--accent-green); font-weight: bold;">✓ Este protocolo de viagem já foi encerrado pelo autor.</span>';
+    if (authMsg) authMsg.innerHTML = '<span style="color: var(--accent-green); font-weight: bold;">✓ Este protocolo de viagem já foi encerrado pelo autor.</span>';
     // Allow creator to delete even if closed
     if (isCreatorAuth && btnDeleteTrip) {
-      activeActions.style.display = 'flex';
+      if (activeActions) activeActions.style.display = 'flex';
       btnDeleteTrip.style.display = 'flex';
       const btnTransmitGps = document.getElementById('btnTransmitGps');
       const btnCloseTrip = document.getElementById('btnCloseTrip');
@@ -416,15 +464,15 @@ function updateCreatorPanelUI(trip) {
   }
 
   if (isCreatorAuth) {
-    authMsg.innerHTML = '<strong>👑 Autenticado como Piloto:</strong> Você registrou este protocolo. O rastreamento atualiza seu trajeto e pontos de passagem a cada 10 segundos ou ao registrar sinal de internet:';
-    activeActions.style.display = 'flex';
+    if (authMsg) authMsg.innerHTML = '<strong>👑 Autenticado como Piloto:</strong> Você registrou este protocolo. O rastreamento atualiza seu trajeto e pontos de passagem a cada 10 segundos ou ao registrar sinal de internet:';
+    if (activeActions) activeActions.style.display = 'flex';
     if (authPrompt) authPrompt.style.display = 'none';
     if (gpsStatusBox) gpsStatusBox.style.display = 'block';
     if (btnEditTrip) btnEditTrip.style.display = 'flex';
     if (btnDeleteTrip) btnDeleteTrip.style.display = 'flex';
   } else {
-    authMsg.innerHTML = '🔒 <strong>Modo Acompanhamento:</strong> Você está visualizando o rastreamento em tempo real. Apenas o integrante responsável possui autorização para gerenciar a viagem.';
-    activeActions.style.display = 'none';
+    if (authMsg) authMsg.innerHTML = '🔒 <strong>Modo Acompanhamento:</strong> Você está visualizando o rastreamento em tempo real. Apenas o integrante responsável possui autorização para gerenciar a viagem.';
+    if (activeActions) activeActions.style.display = 'none';
     if (authPrompt) authPrompt.style.display = 'none';
     if (gpsStatusBox) gpsStatusBox.style.display = 'none';
   }
@@ -574,10 +622,9 @@ async function transmitGpsLocation(tripId, isAutomatic = false) {
         cidade: currentTrip?.last_city || 'Localização GPS'
       };
 
-      // Se não há internet, guarda na fila offline
+      // Se não há internet, guarda na fila offline localmente
       if (!navigator.onLine) {
         saveOfflineCheckin(tripId, pointData);
-        showOfflineNotice(true);
         isSendingGps = false;
         if (!isAutomatic && btn) {
           btn.disabled = false;
@@ -590,11 +637,17 @@ async function transmitGpsLocation(tripId, isAutomatic = false) {
       if (userAuthToken) headers['x-creator-token'] = userAuthToken;
       if (userAuthPin) headers['x-creator-pin'] = userAuthPin;
 
+      // Timeout de 5s para evitar travamento em zonas de sombra de operadora com sinal fraco
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+
       const res = await fetch(`/api/viagens/${tripId}/checkin`, {
         method: 'POST',
         headers,
-        body: JSON.stringify(pointData)
+        body: JSON.stringify(pointData),
+        signal: controller.signal
       });
+      clearTimeout(timeoutId);
 
       if (!res.ok) {
         throw new Error('Servidor retornou erro ao gravar ponto.');
@@ -607,15 +660,15 @@ async function transmitGpsLocation(tripId, isAutomatic = false) {
       syncOfflineCheckins(tripId);
 
     } catch (err) {
-      console.warn('Falha de rede ao transmitir ponto GPS:', err.message);
+      console.warn('Sombra de sinal / falha de rede ao transmitir ponto GPS:', err.message);
       saveOfflineCheckin(tripId, {
         lat,
         lng,
         timestamp: new Date(timestampMs || Date.now()).toISOString(),
-        descricao: isAutomatic ? 'Ponto de passagem no trajeto' : 'Ponto marcado no trajeto',
-        cidade: currentTrip?.last_city || 'Localização GPS'
+        descricao: isAutomatic ? 'Ponto gravado offline (sombra de sinal)' : 'Ponto marcado no trajeto',
+        cidade: currentTrip?.last_city || 'Localização GPS',
+        isOffline: true
       });
-      showOfflineNotice(true);
     } finally {
       isSendingGps = false;
       if (!isAutomatic && btn) {
@@ -654,66 +707,110 @@ async function transmitGpsLocation(tripId, isAutomatic = false) {
   );
 }
 
-// OFFLINE QUEUE MANAGEMENT (Preserva pontos e descarrega quando a internet volta)
+// OFFLINE QUEUE MANAGEMENT (Preserva até 1000 pontos no celular e descarrega quando a internet volta)
+function getOfflineQueue(tripId) {
+  try {
+    const key = `insanos_offline_points_${tripId}`;
+    return JSON.parse(localStorage.getItem(key) || '[]');
+  } catch (e) {
+    return [];
+  }
+}
+
 function saveOfflineCheckin(tripId, point) {
   try {
     const key = `insanos_offline_points_${tripId}`;
-    const queue = JSON.parse(localStorage.getItem(key) || '[]');
+    const queue = getOfflineQueue(tripId);
     // Evita duplicatas idênticas no mesmo segundo
     const isDup = queue.some(p => Math.abs(p.lat - point.lat) < 0.0001 && Math.abs(p.lng - point.lng) < 0.0001 && p.timestamp === point.timestamp);
     if (!isDup) {
       queue.push(point);
-      localStorage.setItem(key, JSON.stringify(queue.slice(-150))); // Guarda até 150 pontos
-      console.log('Ponto de passagem salvo na fila offline. Será sincronizado ao registrar sinal de internet.');
+      localStorage.setItem(key, JSON.stringify(queue.slice(-1000))); // Guarda até 1000 pontos (~3 horas sem sinal)
+      console.log(`[GPISSI Offline] Ponto gravado na memória do celular. Total acumulado: ${queue.length}.`);
     }
+    showOfflineNotice(true, queue.length);
   } catch (e) {
     console.error('Erro ao salvar offline:', e);
   }
 }
 
+let isSyncingOffline = false;
 async function syncOfflineCheckins(tripId) {
+  if (isSyncingOffline) return;
   try {
     const key = `insanos_offline_points_${tripId}`;
-    const queue = JSON.parse(localStorage.getItem(key) || '[]');
+    const queue = getOfflineQueue(tripId);
     if (queue.length === 0) return;
 
+    isSyncingOffline = true;
     const headers = { 'Content-Type': 'application/json' };
     if (userAuthToken) headers['x-creator-token'] = userAuthToken;
     if (userAuthPin) headers['x-creator-pin'] = userAuthPin;
 
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 12000);
+
     const res = await fetch(`/api/viagens/${tripId}/checkin`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ batch: queue })
+      body: JSON.stringify({ batch: queue }),
+      signal: controller.signal
     });
+    clearTimeout(timeoutId);
 
     if (res.ok) {
       localStorage.removeItem(key);
       showOfflineNotice(false);
       loadTripData(tripId, true, shareToken);
-      console.log(`✓ Sincronizados ${queue.length} pontos de passagem acumulados offline.`);
+      showSyncSuccessToast(queue.length);
+      console.log(`✓ [GPISSI Sincronização] Descarregados com sucesso ${queue.length} pontos offline no banco de dados.`);
     }
   } catch (e) {
-    console.warn('Tentativa de sincronização offline aguarda sinal de rede.');
+    console.warn('Tentativa de sincronização offline aguarda restabelecimento do sinal de internet:', e.message);
+  } finally {
+    isSyncingOffline = false;
   }
 }
 
-function showOfflineNotice(isOffline) {
+function showSyncSuccessToast(count) {
+  const banner = document.getElementById('offlineNoticeBanner');
+  if (banner) {
+    banner.style.display = 'block';
+    banner.style.background = 'rgba(0, 230, 118, 0.12)';
+    banner.style.borderColor = 'rgba(0, 230, 118, 0.4)';
+    banner.style.color = '#00e676';
+    banner.innerHTML = `✓ <strong>Conexão restabelecida!</strong> ${count} ponto(s) do histórico de rota gravados offline foram descarregados com sucesso no GPISSI.`;
+    setTimeout(() => {
+      banner.style.display = 'none';
+      banner.style.background = 'rgba(255, 170, 0, 0.12)';
+      banner.style.borderColor = 'rgba(255, 170, 0, 0.4)';
+      banner.style.color = '#ffaa00';
+    }, 6000);
+  }
+}
+
+function showOfflineNotice(isOffline, count = null) {
   const banner = document.getElementById('offlineNoticeBanner');
   const badge = document.getElementById('signalStatusBadge');
-  if (isOffline) {
-    if (banner) banner.style.display = 'block';
+  const tripId = sessionStorage.getItem('tracker_trip_id') || currentTrip?.id;
+  const currentCount = count !== null ? count : (tripId ? getOfflineQueue(tripId).length : 0);
+
+  if (isOffline || currentCount > 0) {
+    if (banner) {
+      banner.style.display = 'block';
+      banner.innerHTML = `⚠️ <strong>Sombra de Sinal de Operadora:</strong> Sem conexão no momento. As coordenadas continuam sendo registradas pelo satélite GPS e salvas na memória do celular (<strong>${currentCount} ponto(s) seguro(s)</strong>). O trajeto completo será descarregado automaticamente no banco de dados assim que a rede voltar.`;
+    }
     if (badge) {
       badge.style.color = '#ffaa00';
       badge.style.background = 'rgba(255,170,0,0.15)';
-      badge.innerHTML = '⚠️ Sinal: Instável (Último Ponto Mantido)';
+      badge.innerHTML = `⚠️ Sinal: Sombra de Operadora (${currentCount} pontos offline)`;
     }
   } else {
-    if (banner) banner.style.display = 'none';
+    if (banner && banner.style.color !== 'rgb(0, 230, 118)') banner.style.display = 'none';
     if (badge) {
       badge.style.color = '#00e676';
       badge.style.background = 'rgba(0,230,118,0.1)';
-      badge.innerHTML = '📶 Sinal: Conectado (10s)';
+      badge.innerHTML = '📶 Sinal: Conectado (Tempo Real)';
     }
   }
 }
@@ -1006,6 +1103,11 @@ function setupEventListeners(tripId) {
       btnConfirmCloseTrip.textContent = 'Encerrando...';
 
       try {
+        // Descarrega qualquer ponto offline pendente antes de fechar o protocolo
+        if (navigator.onLine) {
+          try { await syncOfflineCheckins(tripId); } catch (_) {}
+        }
+
         const headers = { 'Content-Type': 'application/json' };
         if (userAuthToken) headers['x-creator-token'] = userAuthToken;
 

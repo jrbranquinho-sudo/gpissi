@@ -865,33 +865,41 @@ app.post('/api/calcular-rota', async (req, res) => {
 // API: List trips - ORDENADO DO MAIS RECENTE PARA O MAIS ANTIGO
 app.get('/api/viagens', requireAccount, async (req, res) => {
   const viagens = await storage.listTrips();
-  const list = viagens.map(v => ({
-    id: v.id,
-    origem: v.origem,
-    origem_geo: v.origem_geo,
-    destino: v.destino,
-    destino_geo: v.destino_geo,
-    data_saida: v.data_saida,
-    hora_saida: v.hora_saida,
-    previsao_chegada: v.previsao_chegada,
-    data_retorno: v.data_retorno,
-    nome_colete: v.nome_colete,
-    grau: v.grau,
-    status: v.status,
-    transporte_tipo: v.transporte_tipo,
-    transporte_marca: v.transporte_marca,
-    transporte_modelo: v.transporte_modelo,
-    transporte_placa: v.transporte_placa,
-    transporte_detalhe: v.transporte_detalhe,
-    telefone: v.telefone,
-    emergencia_contato: v.emergencia_contato,
-    emergencia_telefone: v.emergencia_telefone,
-    checkins: v.checkins || [],
-    created_at: v.created_at,
-    closed_at: v.closed_at,
-    encerramento_motivo: v.encerramento_motivo || '',
-    share_token: v.share_token
-  })).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  const list = viagens.map(v => {
+    const overdue = gpsUtils.evaluateTripOverdue(v);
+    return {
+      id: v.id,
+      origem: v.origem,
+      origem_geo: v.origem_geo,
+      destino: v.destino,
+      destino_geo: v.destino_geo,
+      data_saida: v.data_saida,
+      hora_saida: v.hora_saida,
+      previsao_chegada: v.previsao_chegada,
+      data_retorno: v.data_retorno,
+      nome_colete: v.nome_colete,
+      grau: v.grau,
+      status: v.status,
+      transporte_tipo: v.transporte_tipo,
+      transporte_marca: v.transporte_marca,
+      transporte_modelo: v.transporte_modelo,
+      transporte_placa: v.transporte_placa,
+      transporte_detalhe: v.transporte_detalhe,
+      telefone: v.telefone,
+      emergencia_contato: v.emergencia_contato,
+      emergencia_telefone: v.emergencia_telefone,
+      checkins: v.checkins || [],
+      last_location: overdue.lastLocation || (v.checkins && v.checkins.length ? v.checkins[v.checkins.length - 1] : null),
+      is_overdue: overdue.isOverdue,
+      overdue_minutes: overdue.overdueMinutes,
+      arrived_at_destination: overdue.arrivedAtDestination,
+      estimated_arrival_ms: overdue.estimatedArrivalMs,
+      created_at: v.created_at,
+      closed_at: v.closed_at,
+      encerramento_motivo: v.encerramento_motivo || '',
+      share_token: v.share_token
+    };
+  }).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
   res.json(list);
 });
@@ -924,7 +932,15 @@ app.get('/api/viagens/:id', loadOptionalAccount, async (req, res) => {
   const tokenValid = token && viagem.admin_token && token === viagem.admin_token;
   const isCreator = Boolean((req.user && viagem.owner_user_id === req.user.id) || tokenValid);
 
-  const publicData = { ...viagem };
+  const overdue = gpsUtils.evaluateTripOverdue(viagem);
+  const publicData = {
+    ...viagem,
+    is_overdue: overdue.isOverdue,
+    overdue_minutes: overdue.overdueMinutes,
+    arrived_at_destination: overdue.arrivedAtDestination,
+    estimated_arrival_ms: overdue.estimatedArrivalMs,
+    last_location: overdue.lastLocation || (viagem.checkins && viagem.checkins.length ? viagem.checkins[viagem.checkins.length - 1] : null)
+  };
   if (!isCreator) {
     delete publicData.admin_token;
     delete publicData.creator_pin;
@@ -1344,32 +1360,46 @@ app.post('/api/viagens/:id/checkin', checkinLimiter, loadOptionalAccount, async 
   if (!viagem.checkins) viagem.checkins = [];
 
   if (Array.isArray(batch) && batch.length > 0) {
-    for (const item of batch.slice(0, 100)) {
+    const validBatchItems = batch.slice(0, 500).filter(item => {
+      const bLat = parseFloat(item?.lat);
+      const bLng = parseFloat(item?.lng);
+      return gpsUtils.isValidCoordinate(bLat, bLng);
+    });
+
+    for (let i = 0; i < validBatchItems.length; i++) {
+      const item = validBatchItems[i];
       const bLat = parseFloat(item.lat);
       const bLng = parseFloat(item.lng);
-      if (gpsUtils.isValidCoordinate(bLat, bLng)) {
-        if (viagem.origem_geo && viagem.destino_geo && !gpsUtils.isPointInRouteCorridor(bLat, bLng, viagem.origem_geo, viagem.destino_geo)) {
-          console.warn(`[Telemetria Batch] Ponto ${bLat}, ${bLng} ignorado: fora do corredor da rota.`);
-          continue;
-        }
 
-        const passageCity = await reverseGeocodeLocation(bLat, bLng);
-        const lastCheckinCity = viagem.checkins.length ? viagem.checkins[viagem.checkins.length - 1]?.cidade : '';
-        const previousCity = viagem.last_city || lastCheckinCity || '';
-        const resolvedCity = passageCity || (item.cidade && item.cidade !== 'Localização GPS' && item.cidade !== 'Localização offline sincronizada' ? item.cidade : previousCity) || 'Em deslocamento na Rodovia';
-
-        const checkin = gpsUtils.buildGpsCheckin({
-          lat: bLat,
-          lng: bLng,
-          timestamp: item.timestamp,
-          description: sanitizeString(item.descricao || 'Ponto de passagem no trajeto', 100),
-          city: sanitizeString(resolvedCity, 100),
-          reverseGeocodedCity: passageCity
-        }, previousCity);
-
-        viagem.checkins.push(checkin);
-        if (passageCity) viagem.last_city = passageCity;
+      if (viagem.origem_geo && viagem.destino_geo && !gpsUtils.isPointInRouteCorridor(bLat, bLng, viagem.origem_geo, viagem.destino_geo)) {
+        console.warn(`[Telemetria Batch] Ponto ${bLat}, ${bLng} ignorado: fora do corredor da rota.`);
+        continue;
       }
+
+      // Check cache first; only call live Nominatim on the last item to prevent timeout/rate-limiting
+      let passageCity = '';
+      const cacheKey = `${Number(bLat).toFixed(2)},${Number(bLng).toFixed(2)}`;
+      if (reverseGeocodeCache.has(cacheKey)) {
+        passageCity = reverseGeocodeCache.get(cacheKey);
+      } else if (i === validBatchItems.length - 1) {
+        passageCity = await reverseGeocodeLocation(bLat, bLng);
+      }
+
+      const lastCheckinCity = viagem.checkins.length ? viagem.checkins[viagem.checkins.length - 1]?.cidade : '';
+      const previousCity = viagem.last_city || lastCheckinCity || '';
+      const resolvedCity = passageCity || (item.cidade && item.cidade !== 'Localização GPS' && item.cidade !== 'Localização offline sincronizada' ? item.cidade : previousCity) || 'Em deslocamento na Rodovia';
+
+      const checkin = gpsUtils.buildGpsCheckin({
+        lat: bLat,
+        lng: bLng,
+        timestamp: item.timestamp,
+        description: sanitizeString(item.descricao || (item.isOffline ? 'Ponto gravado offline (sombra de sinal)' : 'Ponto de passagem no trajeto'), 100),
+        city: sanitizeString(resolvedCity, 100),
+        reverseGeocodedCity: passageCity
+      }, previousCity);
+
+      viagem.checkins.push(checkin);
+      if (passageCity) viagem.last_city = passageCity;
     }
   } else {
     const pLat = parseFloat(lat);
