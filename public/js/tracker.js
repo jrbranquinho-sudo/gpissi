@@ -914,12 +914,12 @@ function renderMapElements(trip) {
   checkinMarkers.forEach(m => m.remove());
   checkinMarkers = [];
 
-  // 1. Origin Marker
+  // 1. Origin Marker (Partida com a Caveira dos Insanos MC)
   const elOrigin = document.createElement('div');
   elOrigin.className = 'custom-maplibre-marker';
-  elOrigin.innerHTML = `<div style="background: #00e676; color: #000; width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 16px; font-weight: 800; border: 3px solid #000; box-shadow: 0 0 15px rgba(0, 230, 118, 0.8);">🏁</div>`;
+  elOrigin.innerHTML = `<div style="background: #ff6600; color: #fff; width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 3px solid #000; box-shadow: 0 0 20px rgba(255, 102, 0, 0.9);"><img src="/images/caveirasembg.png" style="height: 24px; width: auto;" alt="Caveira Insanos MC"></div>`;
 
-  elOrigin.title = `Partida: ${trip.origem}`;
+  elOrigin.title = `Partida (Origem): ${trip.origem}`;
   if (hasOrigin) originMarker = new maplibregl.Marker({ element: elOrigin })
     .setLngLat([oGeo.lon, oGeo.lat])
     .setPopup(new maplibregl.Popup({ offset: 25 }).setHTML(`
@@ -930,17 +930,17 @@ function renderMapElements(trip) {
     `))
     .addTo(map);
 
-  // 2. Destination Marker (with caveirasembg.png)
+  // 2. Destination Marker (Destino Final / Chegada com Bandeira Quadriculada Verde)
   const elDest = document.createElement('div');
   elDest.className = 'custom-maplibre-marker';
-  elDest.innerHTML = `<div style="background: #ff6600; color: #fff; width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 3px solid #000; box-shadow: 0 0 20px rgba(255, 102, 0, 0.9);"><img src="/images/caveirasembg.png" style="height: 24px; width: auto;" alt="Caveira"></div>`;
+  elDest.innerHTML = `<div style="background: #00e676; color: #000; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 18px; font-weight: 800; border: 3px solid #000; box-shadow: 0 0 18px rgba(0, 230, 118, 0.9);">🏁</div>`;
 
-  elDest.title = `Destino: ${trip.destino}`;
+  elDest.title = `Destino Final: ${trip.destino}`;
   if (hasDestination) destMarker = new maplibregl.Marker({ element: elDest })
     .setLngLat([dGeo.lon, dGeo.lat])
     .setPopup(new maplibregl.Popup({ offset: 25 }).setHTML(`
       <div style="font-family: sans-serif; color: #000;">
-        <strong>Destino Final:</strong><br>${trip.destino}<br>
+        <strong>Destino Final (Chegada):</strong><br>${trip.destino}<br>
         <small>Previsão: ${trip.previsao_chegada || 'N/A'}</small>
       </div>
     `))
