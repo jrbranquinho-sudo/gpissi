@@ -15,8 +15,8 @@ let plannedRouteKey = '';
 let plannedRoutePromise = null;
 let isSendingGps = false;
 
-// 10-second GPS tracking timer & continuous GPS watcher
-const TRACK_INTERVAL_SECONDS = 10; // Intervalo de 10 segundos ou menos
+// 5-second GPS tracking timer & continuous GPS watcher
+const TRACK_INTERVAL_SECONDS = 5; // Intervalo de 5 segundos
 let trackCountdown = TRACK_INTERVAL_SECONDS;
 let autoTrackingInterval = null;
 let countdownTimer = null;
@@ -61,12 +61,12 @@ document.addEventListener('DOMContentLoaded', () => {
   initOpenFreeMap();
   loadTripData(tripId, false, shareToken);
 
-  // Auto-refresh for viewers every 10 seconds (tempo real)
+  // Auto-refresh for viewers every 5 seconds (tempo real)
   setInterval(() => {
     if (currentTrip && currentTrip.status === 'EM ANDAMENTO') {
       loadTripData(tripId, true, shareToken);
     }
-  }, 10000);
+  }, 5000);
 
   setupEventListeners(tripId);
   setupNetworkListeners(tripId);
@@ -492,7 +492,7 @@ function updateCreatorPanelUI(trip) {
   }
 
   if (isCreatorAuth) {
-    if (authMsg) authMsg.innerHTML = '<strong>👑 Autenticado como Piloto:</strong> Você registrou este protocolo. O rastreamento atualiza seu trajeto e pontos de passagem a cada 10 segundos ou ao registrar sinal de internet:';
+    if (authMsg) authMsg.innerHTML = '<strong>👑 Autenticado como Piloto:</strong> Você registrou este protocolo. O rastreamento atualiza seu trajeto e pontos de passagem a cada 5 segundos ou ao registrar sinal de internet:';
     if (activeActions) activeActions.style.display = 'flex';
     if (authPrompt) authPrompt.style.display = 'none';
     if (gpsStatusBox) gpsStatusBox.style.display = 'block';
@@ -524,7 +524,7 @@ function startGpsWatcher() {
       (err) => {
         console.warn('GPS Watcher oscilando:', err.message);
       },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 }
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 }
     );
   } catch (e) {
     console.warn('Não foi possível iniciar watchPosition:', e);
@@ -538,7 +538,7 @@ function stopGpsWatcher() {
   }
 }
 
-// 10-SECOND AUTOMATIC GPS TRACKING LOGIC (WITH REALTIME PASSAGE POINTS & OFFLINE RESILIENCE)
+// 5-SECOND AUTOMATIC GPS TRACKING LOGIC (WITH REALTIME PASSAGE POINTS & OFFLINE RESILIENCE)
 function start10SecondAutoTracking(tripId) {
   if (autoTrackingInterval) clearInterval(autoTrackingInterval);
   if (countdownTimer) clearInterval(countdownTimer);
@@ -569,7 +569,7 @@ function start10SecondAutoTracking(tripId) {
     }
   }, 1000);
 
-  // Intervalo de segurança a cada 10 segundos
+  // Intervalo de segurança a cada 5 segundos
   autoTrackingInterval = setInterval(() => {
     if (currentTrip && currentTrip.status === 'EM ANDAMENTO') {
       transmitGpsLocation(tripId, true);
@@ -731,7 +731,7 @@ async function transmitGpsLocation(tripId, isAutomatic = false) {
         alert('Não foi possível obter sinal de satélite. O último registro de localização foi mantido.');
       }
     },
-    { enableHighAccuracy: true, timeout: 10000, maximumAge: 10000 }
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 }
   );
 }
 

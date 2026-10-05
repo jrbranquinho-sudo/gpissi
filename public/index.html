@@ -592,18 +592,7 @@
     document.addEventListener('DOMContentLoaded', () => {
       fetchDashboardTrips();
 
-      // Poll every 10 seconds (tempo real)
-      setInterval(() => {
-        fetchDashboardTrips(true);
-      }, 10000);
-
-      // Re-avalia o status de atraso a cada 30 segundos mesmo sem nova resposta de rede
-      setInterval(() => {
-        if (allTrips.length > 0) {
-          renderDashboard(document.getElementById('dashSearch').value.toLowerCase().trim());
-        }
-      }, 30000);
-
+      // As demais páginas ficam estáticas (sem auto-refresh periódico)
       document.getElementById('dashSearch').addEventListener('input', (e) => {
         renderDashboard(e.target.value.toLowerCase().trim());
       });

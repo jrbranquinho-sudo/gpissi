@@ -136,10 +136,10 @@
       initRadarMap();
       fetchTrips();
 
-      // Auto-poll radar updates every 10 seconds (tempo real)
+      // Auto-poll radar updates a cada 5 segundos (tempo real)
       setInterval(() => {
         fetchTrips(true);
-      }, 10000);
+      }, 5000);
 
       // Filters
       document.querySelectorAll('#filterTabs button').forEach(btn => {
