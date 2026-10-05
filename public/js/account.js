@@ -363,6 +363,12 @@ fetch('/api/auth/me').then(async response => {
     link.href = `/tracker?id=${encodeURIComponent(trip.id)}&share=${encodeURIComponent(trip.share_token)}`;
     link.textContent = `${trip.origem} → ${trip.destino} | ${trip.status} | ${trip.data_saida}`;
     link.style.flex = '1';
+    const returnBtn = document.createElement('a');
+    returnBtn.href = `/novo?retorno_de=${encodeURIComponent(trip.id)}`;
+    returnBtn.className = 'btn-secondary';
+    returnBtn.style.cssText = 'padding: 0.25rem 0.6rem; font-size: 0.8rem; color: #ff9933; border-color: rgba(255, 102, 0, 0.4); margin-left: 0.5rem; text-decoration: none; display: inline-flex; align-items: center;';
+    returnBtn.textContent = '🔄 Retorno';
+
     const delBtn = document.createElement('button');
     delBtn.type = 'button';
     delBtn.className = 'btn-secondary';
@@ -382,7 +388,7 @@ fetch('/api/auth/me').then(async response => {
         alert(err.error || 'Não foi possível apagar a viagem.');
       }
     });
-    item.append(link, delBtn);
+    item.append(link, returnBtn, delBtn);
     return item;
   }));
 }).catch(() => {});

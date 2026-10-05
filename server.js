@@ -776,6 +776,84 @@ app.get('/api/gerar-pin', (req, res) => {
   res.json({ pin: generateSecurePin() });
 });
 
+// Helper: Calculate route and arrival time internally
+async function calculateRouteDetailsInternal(origem, destino, data_saida, hora_saida, transporte_tipo) {
+  const [geoOrigem, geoDestino] = await Promise.all([
+    geocodeLocation(origem),
+    geocodeLocation(destino)
+  ]);
+  if (!geoOrigem || !geoDestino) {
+    return { error: 'Não foi possível localizar uma das cidades no mapa. Confira cidade e estado e tente novamente.' };
+  }
+
+  let distanceKm = 0;
+  let durationSeconds = 0;
+
+  try {
+    const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${geoOrigem.lon},${geoOrigem.lat};${geoDestino.lon},${geoDestino.lat}?overview=false`;
+    const osrmRes = await fetch(osrmUrl);
+    if (osrmRes.ok) {
+      const osrmData = await osrmRes.json();
+      if (osrmData.routes && osrmData.routes.length > 0) {
+        distanceKm = Math.round(osrmData.routes[0].distance / 1000);
+      }
+    }
+  } catch (e) {
+    console.warn('OSRM error:', e.message);
+  }
+
+  if (!distanceKm) {
+    const R = 6371;
+    const dLat = (geoDestino.lat - geoOrigem.lat) * Math.PI / 180;
+    const dLon = (geoDestino.lon - geoOrigem.lon) * Math.PI / 180;
+    const a = 
+      Math.sin(dLat/2) * Math.sin(dLat/2) +
+      Math.cos(geoOrigem.lat * Math.PI / 180) * Math.cos(geoDestino.lat * Math.PI / 180) * 
+      Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    distanceKm = Math.round(R * c * 1.25);
+  }
+
+  const estimate = estimateDurationSeconds(distanceKm, transporte_tipo);
+  durationSeconds = estimate.durationSeconds;
+
+  let previsaoHora = '';
+  const saidaDate = data_saida || new Date().toISOString().split('T')[0];
+  const saidaHora = hora_saida || '08:00';
+
+  try {
+    const [h, m] = saidaHora.split(':').map(Number);
+    const dt = new Date(`${saidaDate}T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00`);
+    if (!isNaN(dt.getTime())) {
+      const arrivalMs = dt.getTime() + (durationSeconds * 1000);
+      const arrivalDate = new Date(arrivalMs);
+      const arrH = String(arrivalDate.getHours()).padStart(2, '0');
+      const arrM = String(arrivalDate.getMinutes()).padStart(2, '0');
+      previsaoHora = `${arrH}:${arrM}`;
+    }
+  } catch (e) {
+    console.warn('Date calculation error:', e);
+  }
+
+  const durationH = Math.floor(durationSeconds / 3600);
+  const durationM = Math.round((durationSeconds % 3600) / 60);
+  const stopText = estimate.stopMinutes ? ` | parada ${estimate.stopMinutes} min` : '';
+
+  return {
+    success: true,
+    origem_geo: geoOrigem,
+    destino_geo: geoDestino,
+    distance_km: distanceKm,
+    duration_hours: durationH,
+    duration_minutes: durationM,
+    duration_text: `${durationH}h ${durationM}min`,
+    average_speed_kmh: estimate.averageSpeedKmh,
+    stop_minutes: estimate.stopMinutes,
+    previsao_chegada_hora: previsaoHora,
+    formatted_previsao: previsaoHora ? `${previsaoHora} (${distanceKm} km | ~${durationH}h ${durationM}min | média ${estimate.averageSpeedKmh} km/h${stopText})` : ''
+  };
+}
+
 // API: Calculate route and arrival time
 app.post('/api/calcular-rota', async (req, res) => {
   try {
@@ -784,78 +862,12 @@ app.post('/api/calcular-rota', async (req, res) => {
       return res.status(400).json({ error: 'Origem e Destino são obrigatórios.' });
     }
 
-    const [geoOrigem, geoDestino] = await Promise.all([
-      geocodeLocation(origem),
-      geocodeLocation(destino)
-    ]);
-    if (!geoOrigem || !geoDestino) {
-      return res.status(422).json({ error: 'Não foi possível localizar uma das cidades no mapa. Confira cidade e estado e tente novamente.' });
+    const result = await calculateRouteDetailsInternal(origem, destino, data_saida, hora_saida, transporte_tipo);
+    if (result.error) {
+      return res.status(422).json({ error: result.error });
     }
 
-    let distanceKm = 0;
-    let durationSeconds = 0;
-
-    try {
-      const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${geoOrigem.lon},${geoOrigem.lat};${geoDestino.lon},${geoDestino.lat}?overview=false`;
-      const osrmRes = await fetch(osrmUrl);
-      if (osrmRes.ok) {
-        const osrmData = await osrmRes.json();
-        if (osrmData.routes && osrmData.routes.length > 0) {
-          distanceKm = Math.round(osrmData.routes[0].distance / 1000);
-        }
-      }
-    } catch (e) {
-      console.warn('OSRM error:', e.message);
-    }
-
-    if (!distanceKm) {
-      const R = 6371;
-      const dLat = (geoDestino.lat - geoOrigem.lat) * Math.PI / 180;
-      const dLon = (geoDestino.lon - geoOrigem.lon) * Math.PI / 180;
-      const a = 
-        Math.sin(dLat/2) * Math.sin(dLat/2) +
-        Math.cos(geoOrigem.lat * Math.PI / 180) * Math.cos(geoDestino.lat * Math.PI / 180) * 
-        Math.sin(dLon/2) * Math.sin(dLon/2);
-      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-      distanceKm = Math.round(R * c * 1.25);
-    }
-
-    const estimate = estimateDurationSeconds(distanceKm, transporte_tipo);
-    durationSeconds = estimate.durationSeconds;
-
-    let previsaoHora = '';
-    const saidaDate = data_saida || new Date().toISOString().split('T')[0];
-    const saidaHora = hora_saida || '08:00';
-
-    try {
-      const [h, m] = saidaHora.split(':').map(Number);
-      const dt = new Date(`${saidaDate}T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00`);
-      if (!isNaN(dt.getTime())) {
-        const arrivalMs = dt.getTime() + (durationSeconds * 1000);
-        const arrivalDate = new Date(arrivalMs);
-        const arrH = String(arrivalDate.getHours()).padStart(2, '0');
-        const arrM = String(arrivalDate.getMinutes()).padStart(2, '0');
-        previsaoHora = `${arrH}:${arrM}`;
-      }
-    } catch (e) {
-      console.warn('Date calculation error:', e);
-    }
-
-    const durationH = Math.floor(durationSeconds / 3600);
-    const durationM = Math.round((durationSeconds % 3600) / 60);
-
-    res.json({
-      success: true,
-      origem_geo: geoOrigem,
-      destino_geo: geoDestino,
-      distance_km: distanceKm,
-      duration_hours: durationH,
-      duration_minutes: durationM,
-      duration_text: `${durationH}h ${durationM}min`,
-      average_speed_kmh: estimate.averageSpeedKmh,
-      stop_minutes: estimate.stopMinutes,
-      previsao_chegada_hora: previsaoHora
-    });
+    res.json(result);
   } catch (err) {
     console.error('Erro em calcular-rota:', err);
     res.status(500).json({ error: 'Erro ao calcular rota e previsão.' });
@@ -865,8 +877,11 @@ app.post('/api/calcular-rota', async (req, res) => {
 // API: List trips - ORDENADO DO MAIS RECENTE PARA O MAIS ANTIGO
 app.get('/api/viagens', requireAccount, async (req, res) => {
   const viagens = await storage.listTrips();
+  const now = Date.now();
   const list = viagens.map(v => {
     const overdue = gpsUtils.evaluateTripOverdue(v);
+    const createdTime = v.created_at ? new Date(v.created_at).getTime() : 0;
+    const canReturn = Boolean(createdTime && (now - createdTime <= 72 * 60 * 60 * 1000));
     return {
       id: v.id,
       origem: v.origem,
@@ -886,8 +901,12 @@ app.get('/api/viagens', requireAccount, async (req, res) => {
       transporte_placa: v.transporte_placa,
       transporte_detalhe: v.transporte_detalhe,
       telefone: v.telefone,
+      vai_acompanhado: v.vai_acompanhado || 'Não',
+      quem_vai_junto: v.quem_vai_junto || '',
+      acompanhantes: v.acompanhantes || [],
       emergencia_contato: v.emergencia_contato,
       emergencia_telefone: v.emergencia_telefone,
+      emergency_contact_id: v.emergency_contact_id || '',
       checkins: v.checkins || [],
       last_location: overdue.lastLocation || (v.checkins && v.checkins.length ? v.checkins[v.checkins.length - 1] : null),
       is_overdue: overdue.isOverdue,
@@ -897,7 +916,8 @@ app.get('/api/viagens', requireAccount, async (req, res) => {
       created_at: v.created_at,
       closed_at: v.closed_at,
       encerramento_motivo: v.encerramento_motivo || '',
-      share_token: v.share_token
+      share_token: v.share_token,
+      can_return: canReturn
     };
   }).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
@@ -1142,6 +1162,214 @@ app.post('/api/viagens', createTripLimiter, requireAccount, async (req, res) => 
   } catch (error) {
     console.error('Erro ao criar protocolo:', error.message);
     res.status(500).json({ error: 'Erro interno ao registrar protocolo de viagem.' });
+  }
+});
+
+// API: Gerar Protocolo de Retorno aproveitando o primeiro protocolo (inverte Origem e Destino) em até 72h
+app.post('/api/viagens/:id/retorno', createTripLimiter, requireAccount, async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isValidTripId(id)) {
+      return res.status(400).json({ error: 'ID de protocolo inválido.' });
+    }
+
+    let original = await storage.findTrip(id);
+    if (!original) {
+      return res.status(404).json({ error: 'Protocolo de viagem original não encontrado ou expirado.' });
+    }
+
+    original = await repairLegacyTripGeocodes(original);
+
+    // Valida se o primeiro protocolo foi criado há no máximo 72 horas
+    const tripAgeMs = Date.now() - new Date(original.created_at).getTime();
+    if (tripAgeMs > 72 * 60 * 60 * 1000) {
+      return res.status(400).json({
+        error: 'O prazo de 72 horas para aproveitar este protocolo de viagem expirou. Por favor, cadastre um novo protocolo.'
+      });
+    }
+
+    // Inversão automática: Origem vira o antigo Destino; Destino vira a antiga Origem
+    const cleanOrigem = sanitizeString(original.destino, 120);
+    const cleanDestino = sanitizeString(original.origem, 120);
+    let origemGeo = original.destino_geo;
+    let destinoGeo = original.origem_geo;
+
+    if (!origemGeo || !destinoGeo) {
+      const [gO, gD] = await Promise.all([
+        geocodeLocation(cleanOrigem),
+        geocodeLocation(cleanDestino)
+      ]);
+      origemGeo = gO;
+      destinoGeo = gD;
+    }
+
+    if (!origemGeo || !destinoGeo) {
+      return res.status(422).json({ error: 'Não foi possível geolocalizar as cidades da rota invertida no mapa.' });
+    }
+
+    // Piloto da viagem de retorno: dados do perfil autenticado
+    const cleanNomeColete = req.user.profile.nome_colete;
+    const cleanTelefone = req.user.profile.telefone;
+    const cleanGrau = req.user.profile.funcao_grau || [req.user.profile.grau, req.user.profile.funcao].filter(Boolean).join(' - ') || 'Integrante';
+
+    // Veículo aproveitado do primeiro protocolo (ou sobrescrito se informado no body)
+    const cleanTransporteTipo = ['MOTO', 'CARRO', 'ÔNIBUS', 'OUTRO'].includes(req.body.transporte_tipo)
+      ? req.body.transporte_tipo
+      : (original.transporte_tipo || 'MOTO');
+    const cleanTransporteMarca = sanitizeString(req.body.transporte_marca || original.transporte_marca || '', 60);
+    const cleanTransporteModelo = sanitizeString(req.body.transporte_modelo || original.transporte_modelo || '', 60);
+    const cleanTransportePlaca = sanitizeString(req.body.transporte_placa || original.transporte_placa || '', 12).toUpperCase();
+    const cleanTransporteDetalhe = sanitizeString(req.body.transporte_detalhe || original.transporte_detalhe || '', 160);
+
+    // Contato de emergência: aproveita o contato de emergência configurado
+    let emergencyContact = null;
+    const userEmergencyContacts = await storage.listOwnedContacts('emergency_contacts', req.user.id);
+    if (req.body.emergency_contact_id) {
+      emergencyContact = userEmergencyContacts.find(c => c.id === req.body.emergency_contact_id);
+    } else if (original.emergency_contact_id) {
+      emergencyContact = userEmergencyContacts.find(c => c.id === original.emergency_contact_id);
+    }
+    if (!emergencyContact && userEmergencyContacts.length > 0) {
+      emergencyContact = userEmergencyContacts[0];
+    }
+    const emergenciaContatoNome = emergencyContact
+      ? (emergencyContact.relacao && emergencyContact.relacao !== 'Nenhum' ? `${emergencyContact.nome} - ${emergencyContact.relacao.toLowerCase()}` : emergencyContact.nome)
+      : (original.emergencia_contato || 'Central Insanos MC');
+    const emergenciaContatoTel = emergencyContact ? emergencyContact.telefone : (original.emergencia_telefone || cleanTelefone);
+    const emergencyContactId = emergencyContact ? emergencyContact.id : (original.emergency_contact_id || '');
+
+    // Data e Hora de Saída (permitindo alterar)
+    const todayStr = new Date().toISOString().split('T')[0];
+    const cleanDataSaida = sanitizeString(req.body.data_saida || todayStr, 15);
+    const now = new Date();
+    const currentHourStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    const cleanHoraSaida = sanitizeString(req.body.hora_saida || currentHourStr, 10);
+    const cleanDataRetorno = sanitizeString(req.body.data_retorno || cleanDataSaida, 15);
+
+    // Acompanhantes (permitindo alterar quantidade e integrantes)
+    const cleanVaiAcompanhado = req.body.vai_acompanhado === 'Sim' ? 'Sim' : 'Não';
+    let companionIds = Array.isArray(req.body.companion_ids) ? [...new Set(req.body.companion_ids)].slice(0, 5) : [];
+
+    let companions = [];
+    let cleanQuemVaiJunto = 'Nenhum (Solo)';
+
+    if (cleanVaiAcompanhado === 'Sim') {
+      if (companionIds.length === 0 && Array.isArray(original.acompanhantes) && original.acompanhantes.length > 0) {
+        companionIds = original.acompanhantes.map(a => a.id).filter(Boolean);
+      }
+      if (companionIds.length === 0 || companionIds.length > 4) {
+        return res.status(400).json({ error: 'Selecione de um a quatro acompanhantes cadastrados para a viagem de retorno.' });
+      }
+
+      const members = await storage.listMembers();
+      const ownContacts = await storage.listOwnedContacts('companions', req.user.id);
+      const availableCompanions = [
+        ...members.filter(m => m.id !== req.user.id),
+        ...ownContacts.map(contact => {
+          const hasRel = contact.relacao && contact.relacao !== 'Nenhum';
+          return {
+            id: contact.id,
+            nome_colete: hasRel ? `${contact.nome} - ${contact.relacao.toLowerCase()}` : contact.nome,
+            nome_puro: contact.nome,
+            relacao: contact.relacao || 'Nenhum',
+            grau: hasRel ? contact.relacao : 'Contato',
+            funcao: 'Acompanhante',
+            telefone: contact.telefone
+          };
+        })
+      ];
+      const rawCompanions = companionIds.map(memberId => availableCompanions.find(m => m.id === memberId)).filter(Boolean);
+      companions = sortCompanionsByRelation(rawCompanions);
+      cleanQuemVaiJunto = companions.map(formatCompanionDisplayName).join(', ');
+    }
+
+    // Calcula estimativa da rota invertida e previsão de chegada
+    const routeEstimate = await calculateRouteDetailsInternal(
+      cleanOrigem,
+      cleanDestino,
+      cleanDataSaida,
+      cleanHoraSaida,
+      cleanTransporteTipo
+    );
+
+    const cleanPrevisaoChegada = routeEstimate.formatted_previsao || original.previsao_chegada || 'Conforme condições de tráfego';
+
+    const newId = 'INS-' + Math.random().toString(36).substring(2, 6).toUpperCase() + '-' + Math.floor(1000 + Math.random() * 9000);
+    const admin_token = crypto.randomUUID();
+    const share_token = crypto.randomBytes(32).toString('base64url');
+    const pin = req.body.creator_pin && !isSequentialOrTrivialPin(req.body.creator_pin)
+      ? String(req.body.creator_pin).trim()
+      : (original.creator_pin || generateSecurePin());
+
+    const novaViagem = {
+      id: newId,
+      owner_user_id: req.user.id,
+      admin_token,
+      share_token,
+      creator_pin: pin,
+      status: 'EM ANDAMENTO',
+      origem: cleanOrigem,
+      origem_geo: origemGeo,
+      data_saida: cleanDataSaida,
+      hora_saida: cleanHoraSaida,
+      destino: cleanDestino,
+      destino_geo: destinoGeo,
+      previsao_chegada: cleanPrevisaoChegada,
+      data_retorno: cleanDataRetorno,
+      nome_colete: cleanNomeColete,
+      grau: cleanGrau,
+      telefone: cleanTelefone,
+      transporte_tipo: cleanTransporteTipo,
+      transporte_marca: cleanTransporteMarca,
+      transporte_modelo: cleanTransporteModelo,
+      transporte_placa: cleanTransportePlaca,
+      transporte_detalhe: cleanTransporteDetalhe,
+      vai_acompanhado: cleanVaiAcompanhado,
+      quem_vai_junto: cleanQuemVaiJunto,
+      acompanhantes: companions.map(({ id: memberId, nome_colete, grau, funcao }) => ({ id: memberId, nome_colete, grau, funcao })),
+      emergencia_contato: emergenciaContatoNome,
+      emergencia_telefone: emergenciaContatoTel,
+      emergency_contact_id: emergencyContactId,
+      observacoes_notas: sanitizeString(req.body.observacoes_notas || original.observacoes_notas || '', 1000),
+      observacoes_resumo: sanitizeString(req.body.observacoes_resumo || `Viagem de Retorno baseada no protocolo ${original.id}`, 1000),
+      retorno_de_id: original.id,
+      checkins: [
+        {
+          timestamp: new Date().toISOString(),
+          lat: origemGeo.lat,
+          lng: origemGeo.lon,
+          descricao: `Protocolo de Retorno Aberto - Ponto de Partida (${cleanOrigem})`,
+          cidade: cleanOrigem
+        }
+      ],
+      last_city: cleanOrigem,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      closed_at: null,
+      encerramento_motivo: ''
+    };
+
+    await storage.saveTrip(novaViagem);
+
+    const host = req.get('host');
+    const proto = req.get('x-forwarded-proto') || req.protocol || 'https';
+    const trackerUrl = `${proto}://${host}/tracker?id=${novaViagem.id}&share=${novaViagem.share_token}`;
+    const whatsappMessage = gpsUtils.buildWhatsAppProtocolMessage(novaViagem, trackerUrl);
+
+    res.json({
+      success: true,
+      message: 'Protocolo de retorno gerado e entregue com sucesso!',
+      id: novaViagem.id,
+      admin_token: novaViagem.admin_token,
+      share_token: novaViagem.share_token,
+      creator_pin: novaViagem.creator_pin,
+      tracker_url: trackerUrl,
+      whatsapp_message: whatsappMessage,
+      viagem: novaViagem
+    });
+  } catch (error) {
+    console.error('Erro ao gerar viagem de retorno:', error);
+    res.status(500).json({ error: 'Erro interno ao gerar viagem de retorno: ' + error.message });
   }
 });
 

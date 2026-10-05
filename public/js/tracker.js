@@ -214,6 +214,33 @@ function renderTripDetails(trip) {
     if (closedNoticeCard) closedNoticeCard.style.display = 'none';
   }
 
+  // BOTÕES DE VIAGEM DE RETORNO (VÁLIDOS POR ATÉ 72H)
+  const tripAgeMs = trip.created_at ? (Date.now() - new Date(trip.created_at).getTime()) : Infinity;
+  const canReturn = tripAgeMs <= 72 * 60 * 60 * 1000;
+  const btnReturnTrip = document.getElementById('btnReturnTrip');
+  if (btnReturnTrip) {
+    if (isClosed && canReturn) {
+      btnReturnTrip.style.display = 'flex';
+      btnReturnTrip.onclick = () => {
+        window.location.href = `/novo?retorno_de=${encodeURIComponent(trip.id)}`;
+      };
+    } else {
+      btnReturnTrip.style.display = 'none';
+    }
+  }
+
+  const btnReturnTripActive = document.getElementById('btnReturnTripActive');
+  if (btnReturnTripActive) {
+    if (!isClosed && canReturn) {
+      btnReturnTripActive.style.display = 'flex';
+      btnReturnTripActive.onclick = () => {
+        window.location.href = `/novo?retorno_de=${encodeURIComponent(trip.id)}`;
+      };
+    } else {
+      btnReturnTripActive.style.display = 'none';
+    }
+  }
+
   const statRouteName = document.getElementById('statRouteName');
   if (statRouteName) statRouteName.textContent = `${trip.origem || '--'} ➔ ${trip.destino || '--'}`;
 

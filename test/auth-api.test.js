@@ -352,6 +352,22 @@ test('cadastro e login mostram desafio visual e renovam sequência incorreta', a
   assert.equal(editTrip.body.viagem.transporte_modelo, 'MT-09');
   assert.equal(editTrip.body.viagem.observacoes_notas, 'Viagem editada pelo autor');
 
+  // Teste de Viagem de Retorno (inverte origem/destino, altera hora de saida e acompanhantes em ate 72h)
+  const returnTripRes = await postJson(`/api/viagens/${trip.body.id}/retorno`, {
+    hora_saida: '17:45',
+    vai_acompanhado: 'Não'
+  }, { cookie });
+  assert.equal(returnTripRes.response.status, 200);
+  assert.equal(returnTripRes.body.success, true);
+  assert.equal(returnTripRes.body.viagem.origem, trip.body.viagem.destino);
+  assert.equal(returnTripRes.body.viagem.destino, trip.body.viagem.origem);
+  assert.equal(returnTripRes.body.viagem.hora_saida, '17:45');
+  assert.equal(returnTripRes.body.viagem.vai_acompanhado, 'Não');
+  assert.equal(returnTripRes.body.viagem.retorno_de_id, trip.body.id);
+  assert.ok(returnTripRes.body.whatsapp_message);
+  assert.ok(returnTripRes.body.tracker_url);
+  assert.match(returnTripRes.body.whatsapp_message, /GPISSI - PROTOCOLO DE VIAGEM/);
+
   // Teste de Exclusão da Viagem pelo autor
   const deleteTripRes = await fetch(`${baseUrl}/api/viagens/${trip.body.id}`, {
     method: 'DELETE',

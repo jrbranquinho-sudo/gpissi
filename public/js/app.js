@@ -15,6 +15,7 @@ document.addEventListener('DOMContentLoaded', () => {
   setupVehicleCatalog();
   setupCompanionToggle();
   setupFormSubmission();
+  setupReturnTripPrefill();
 });
 
 // 1. DATES: Default today and sync Retorno = Saída
@@ -782,4 +783,74 @@ function buildAndShowModal(viagem) {
   document.getElementById('closeModalBtn').onclick = () => {
     modal.classList.remove('active');
   };
+}
+
+async function setupReturnTripPrefill() {
+  const urlParams = new URLSearchParams(window.location.search);
+  const retornoDeId = urlParams.get('retorno_de');
+  if (!retornoDeId) return;
+
+  try {
+    const res = await fetch(`/api/viagens/${encodeURIComponent(retornoDeId)}`);
+    if (!res.ok) return;
+    const trip = await res.json();
+
+    // Rota invertida
+    const origemInput = document.getElementById('origem');
+    const destinoInput = document.getElementById('destino');
+    if (origemInput && trip.destino) origemInput.value = trip.destino;
+    if (destinoInput && trip.origem) destinoInput.value = trip.origem;
+
+    // Data de hoje e hora atual
+    const now = new Date();
+    const dateStr = now.toISOString().split('T')[0];
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    const dataSaidaInput = document.getElementById('data_saida');
+    const horaSaidaInput = document.getElementById('hora_saida');
+    if (dataSaidaInput) dataSaidaInput.value = dateStr;
+    if (horaSaidaInput) horaSaidaInput.value = `${hours}:${minutes}`;
+
+    // Veículo
+    if (trip.transporte_tipo) {
+      const radio = document.querySelector(`input[name="transporte_tipo"][value="${trip.transporte_tipo}"]`);
+      if (radio) {
+        radio.checked = true;
+        radio.dispatchEvent(new Event('change'));
+      }
+    }
+    if (trip.transporte_placa) {
+      const placaInput = document.getElementById('transporte_placa');
+      if (placaInput) placaInput.value = trip.transporte_placa;
+    }
+    if (trip.transporte_modelo) {
+      const modeloInput = document.getElementById('transporte_modelo');
+      if (modeloInput) modeloInput.value = trip.transporte_modelo;
+    }
+
+    // Acompanhantes
+    if (trip.vai_acompanhado === 'Sim') {
+      const compSimRadio = document.querySelector('input[name="vai_acompanhado"][value="Sim"]');
+      if (compSimRadio) {
+        compSimRadio.checked = true;
+        compSimRadio.dispatchEvent(new Event('change'));
+      }
+    }
+
+    // Recalcula rota automaticamente
+    setTimeout(() => {
+      triggerRouteCalculation();
+    }, 400);
+
+    // Banner indicativo no topo
+    const hero = document.querySelector('.protocol-hero');
+    if (hero) {
+      const banner = document.createElement('div');
+      banner.style.cssText = 'background: rgba(255, 102, 0, 0.15); border: 1px solid var(--issi-orange); border-radius: 6px; padding: 0.75rem 1rem; margin-top: 1rem; font-size: 0.92rem; color: #ff9933; text-align: center; font-weight: 700;';
+      banner.innerHTML = `🔄 <strong>MODO RETORNO ATIVADO:</strong> Origem e Destino invertidos com base no protocolo anterior (<strong>${trip.origem} ➔ ${trip.destino}</strong>). Confira a hora de saída e acompanhantes antes de gerar.`;
+      hero.appendChild(banner);
+    }
+  } catch (err) {
+    console.warn('Erro ao carregar dados de retorno:', err);
+  }
 }

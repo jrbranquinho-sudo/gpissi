@@ -280,7 +280,30 @@
       border-left: 5px solid #ef4444 !important;
       border-color: rgba(239, 68, 68, 0.6);
       background: linear-gradient(135deg, rgba(239, 68, 68, 0.1) 0%, var(--bg-card) 60%);
-      animation: alert-pulse 2.5s infinite ease-in-out;
+    /* RETORNO DE VIAGEM (EM ATE 72H) */
+    .btn-retorno-pill {
+      background: linear-gradient(135deg, rgba(255, 102, 0, 0.12), rgba(255, 102, 0, 0.22));
+      border: 1px solid var(--issi-orange);
+      color: #ff9933;
+      padding: 0.35rem 0.75rem;
+      border-radius: 9999px;
+      font-size: 0.78rem;
+      font-weight: 700;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      transition: all 0.2s ease;
+      font-family: var(--font-sub);
+      text-decoration: none;
+      z-index: 2;
+    }
+
+    .btn-retorno-pill:hover {
+      background: var(--issi-orange);
+      color: #000;
+      box-shadow: 0 0 12px rgba(255, 102, 0, 0.5);
+      transform: translateY(-1px);
     }
   </style>
 </head>
@@ -427,6 +450,130 @@
     </div>
 
   </main>
+
+  <!-- MODAL: VIAGEM DE RETORNO (INVERSÃO DE ROTA EM ATÉ 72H) -->
+  <div class="modal-overlay" id="returnTripModal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85); backdrop-filter: blur(5px); z-index: 9999; align-items: center; justify-content: center; padding: 1rem;">
+    <div class="modal-container" style="background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); width: 100%; max-width: 580px; box-shadow: 0 20px 40px rgba(0,0,0,0.8); overflow: hidden;">
+      <div class="modal-header" style="background: #0f131a; padding: 1rem 1.25rem; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-subtle);">
+        <div class="modal-title" style="display: flex; align-items: center; gap: 0.5rem; font-family: var(--font-sub); font-weight: 900; color: #fff; font-size: 1.05rem;">
+          <img src="/images/caveirasembg.png" alt="Caveira" style="height: 22px;">
+          <span><span class="gp-blue">GP</span><span class="issi-orange">ISSI</span> &bull; PROTOCOLO DE RETORNO</span>
+        </div>
+        <button class="modal-close" onclick="closeReturnTripModal()" style="background: transparent; border: none; color: #94a3b8; font-size: 1.5rem; cursor: pointer;">&times;</button>
+      </div>
+      <div class="modal-body" style="padding: 1.25rem;">
+        <div style="background: rgba(255, 102, 0, 0.08); border: 1px solid rgba(255, 102, 0, 0.3); border-radius: var(--radius-sm); padding: 0.85rem; margin-bottom: 1.25rem;">
+          <div style="font-size: 0.75rem; color: var(--issi-orange); font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.4rem;">
+            🔄 ROTA INVERTIDA AUTOMATICAMENTE (VÁLIDA POR ATÉ 72H)
+          </div>
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap;">
+            <div>
+              <div style="font-size: 0.75rem; color: var(--text-muted);">NOVA ORIGEM:</div>
+              <strong id="retModalOrigem" style="font-size: 1.05rem; color: #fff;">--</strong>
+            </div>
+            <div style="color: var(--issi-orange); font-size: 1.4rem; font-weight: 900;">➔</div>
+            <div>
+              <div style="font-size: 0.75rem; color: var(--text-muted);">NOVO DESTINO:</div>
+              <strong id="retModalDestino" style="font-size: 1.05rem; color: #fff;">--</strong>
+            </div>
+          </div>
+          <div id="retModalMeta" style="font-size: 0.8rem; color: #94a3b8; margin-top: 0.5rem; border-top: 1px dashed rgba(255, 255, 255, 0.1); padding-top: 0.4rem;">
+            Piloto e Condução mantidos do protocolo anterior.
+          </div>
+        </div>
+
+        <form id="returnTripForm" onsubmit="submitReturnTrip(event)">
+          <input type="hidden" id="retTripId">
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+            <div>
+              <label style="font-size: 0.82rem; font-weight: 700; color: #cbd5e1; display: block; margin-bottom: 0.35rem;">
+                Data de Saída do Retorno *
+              </label>
+              <input type="date" id="retDataSaida" class="form-control" required style="width: 100%; padding: 0.6rem; background: var(--bg-secondary); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); color: #fff;">
+            </div>
+            <div>
+              <label style="font-size: 0.82rem; font-weight: 700; color: #cbd5e1; display: block; margin-bottom: 0.35rem;">
+                Hora de Saída do Retorno *
+              </label>
+              <input type="time" id="retHoraSaida" class="form-control" required style="width: 100%; padding: 0.6rem; background: var(--bg-secondary); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); color: #fff;">
+            </div>
+          </div>
+
+          <!-- ACOMPANHANTES -->
+          <div style="margin-bottom: 1.2rem; background: var(--bg-secondary); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: 0.9rem;">
+            <label style="font-size: 0.85rem; font-weight: 700; color: #cbd5e1; display: block; margin-bottom: 0.5rem;">
+              👥 Acompanhantes no Retorno
+            </label>
+            <div style="display: flex; gap: 1.5rem; margin-bottom: 0.6rem;">
+              <label style="font-size: 0.88rem; cursor: pointer; display: flex; align-items: center; gap: 0.35rem; color: #e2e8f0;">
+                <input type="radio" name="retVaiAcomp" value="Não" checked onchange="toggleRetCompanions()">
+                <span>Não (Solo)</span>
+              </label>
+              <label style="font-size: 0.88rem; cursor: pointer; display: flex; align-items: center; gap: 0.35rem; color: #e2e8f0;">
+                <input type="radio" name="retVaiAcomp" value="Sim" onchange="toggleRetCompanions()">
+                <span>Sim (Acompanhado)</span>
+              </label>
+            </div>
+
+            <div id="retCompanionsBox" style="display: none; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 0.6rem;">
+              <div style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 0.4rem;" id="retCompanionsCount">
+                Selecione até 4 acompanhantes cadastrados:
+              </div>
+              <div id="retCompanionsList" style="display: flex; flex-direction: column; gap: 0.4rem; max-height: 160px; overflow-y: auto;">
+                <div style="font-size: 0.8rem; color: var(--text-muted);">Carregando integrantes...</div>
+              </div>
+            </div>
+          </div>
+
+          <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+            <button type="submit" id="btnSubmitReturn" class="btn-primary-insano" style="width: 100%; padding: 0.85rem; justify-content: center; font-size: 0.95rem; cursor: pointer;">
+              <img src="/images/caveirasembg.png" alt="Caveira" class="skull-btn-icon" style="height: 20px;">
+              <span>⚡ GERAR E ENTREGAR PROTOCOLO DE RETORNO</span> ➔
+            </button>
+            <a href="#" id="retEditFullFormLink" style="text-align: center; color: var(--text-muted); font-size: 0.82rem; text-decoration: underline;">
+              Abrir no formulário completo para alterar outros dados
+            </a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: SUCESSO & ENTREGA DA FICHA DE RETORNO -->
+  <div class="modal-overlay" id="returnDeliveryModal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85); backdrop-filter: blur(5px); z-index: 9999; align-items: center; justify-content: center; padding: 1rem;">
+    <div class="modal-container" style="background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); width: 100%; max-width: 600px; box-shadow: 0 20px 40px rgba(0,0,0,0.8); overflow: hidden;">
+      <div class="modal-header" style="background: #0f131a; padding: 1rem 1.25rem; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-subtle);">
+        <div class="modal-title" style="display: flex; align-items: center; gap: 0.5rem; font-family: var(--font-sub); font-weight: 900; color: #fff; font-size: 1.05rem;">
+          <img src="/images/caveirasembg.png" alt="Caveira" style="height: 22px;">
+          <span><span class="gp-blue">GP</span><span class="issi-orange">ISSI</span> &bull; PROTOCOLO DE RETORNO ENTREGUE</span>
+        </div>
+        <button class="modal-close" onclick="closeReturnDeliveryModal()" style="background: transparent; border: none; color: #94a3b8; font-size: 1.5rem; cursor: pointer;">&times;</button>
+      </div>
+      <div class="modal-body" style="padding: 1.25rem;">
+        <p style="color: var(--accent-green); font-weight: 700; margin-bottom: 0.75rem; font-family: var(--font-sub); font-size: 1.1rem;">
+          ✓ PROTOCOLO DE RETORNO GERADO COM SUCESSO!
+        </p>
+        <p style="color: var(--text-muted); font-size: 0.88rem; margin-bottom: 1rem;">
+          A ficha oficial com a rota invertida está pronta. Compartilhe nos grupos de WhatsApp dos Insanos MC e acompanhe em tempo real:
+        </p>
+
+        <div class="ficha-preview-box" id="retFichaPreview" style="background: #0b0f19; border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: 1rem; font-family: monospace; font-size: 0.82rem; color: #cbd5e1; white-space: pre-wrap; max-height: 240px; overflow-y: auto; margin-bottom: 1.25rem;">Carregando ficha...</div>
+
+        <div class="modal-actions" style="display: flex; flex-direction: column; gap: 0.75rem;">
+          <a href="#" id="retBtnShareWhatsapp" target="_blank" class="btn-whatsapp" style="background: #25d366; color: #000; padding: 0.85rem 1rem; border-radius: var(--radius-sm); text-align: center; text-decoration: none; font-weight: 800; font-family: var(--font-sub); display: flex; align-items: center; justify-content: center; gap: 0.5rem;">
+            <span>📱 ENVIAR FICHA PARA O WHATSAPP COM LINK EM TEMPO REAL</span>
+          </a>
+          <button type="button" class="btn-copy" id="retBtnCopyFicha" onclick="copyReturnFicha()" style="background: var(--bg-card); color: #fff; border: 1px solid var(--border-subtle); padding: 0.75rem; border-radius: var(--radius-sm); font-weight: 700; cursor: pointer;">
+            <span>📋 Copiar Ficha Formatada</span>
+          </button>
+          <a href="#" id="retBtnOpenRadar" class="btn-tracker-open" style="background: var(--gp-blue); color: #000; padding: 0.75rem 1rem; border-radius: var(--radius-sm); text-align: center; text-decoration: none; font-weight: 800; font-family: var(--font-sub); display: flex; align-items: center; justify-content: center; gap: 0.5rem;">
+            <span>🗺️ Acompanhar Retorno no Radar Agora</span>
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <!-- FOOTER -->
   <footer class="footer">
@@ -721,9 +868,16 @@
               <span>🏁 Previsão: <strong style="${isOverdue ? 'color: #f87171;' : ''}">${t.previsao_chegada || 'Conforme tráfego'}</strong></span>
             </div>
 
-            <div style="font-size: 0.82rem; color: #cbd5e1; display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #1e2430; padding-top: 0.5rem;">
+            <div style="font-size: 0.82rem; color: #cbd5e1; display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #1e2430; padding-top: 0.5rem; flex-wrap: wrap; gap: 0.5rem;">
               <span>📍 Ponto: <strong style="color: ${isOverdue ? '#ff4d4d' : 'var(--issi-orange-bright)'};">${lastLoc}</strong></span>
-              <span class="dash-click-hint" style="${isOverdue ? 'color: #ff4d4d;' : ''}">Abrir no Radar ➔</span>
+              <div style="display: flex; gap: 0.5rem; align-items: center;">
+                ${t.can_return ? `
+                  <button type="button" class="btn-retorno-pill" onclick="openReturnTripModal('${t.id}', event)">
+                    <span>🔄 Viagem de Retorno</span>
+                  </button>
+                ` : ''}
+                <span class="dash-click-hint" style="${isOverdue ? 'color: #ff4d4d;' : ''}">Abrir no Radar ➔</span>
+              </div>
             </div>
           </a>
         `;
@@ -779,13 +933,214 @@
               <span>Encerrada: ${closedTimeStr}</span>
             </div>
 
-            <div style="font-size: 0.8rem; color: var(--text-muted); display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #1e2430; padding-top: 0.5rem;">
+            <div style="font-size: 0.8rem; color: var(--text-muted); display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #1e2430; padding-top: 0.5rem; flex-wrap: wrap; gap: 0.5rem;">
               <span><em>"${t.encerramento_motivo || 'Chegada confirmada'}"</em></span>
-              <span class="dash-click-hint" style="color: var(--accent-green);">Ver Histórico ➔</span>
+              <div style="display: flex; gap: 0.5rem; align-items: center;">
+                ${t.can_return ? `
+                  <button type="button" class="btn-retorno-pill" onclick="openReturnTripModal('${t.id}', event)">
+                    <span>🔄 Viagem de Retorno</span>
+                  </button>
+                ` : ''}
+                <span class="dash-click-hint" style="color: var(--accent-green);">Ver Histórico ➔</span>
+              </div>
             </div>
           </a>
         `;
       }).join('');
+    }
+
+    // --- PROTOCOLO DE RETORNO EM ATÉ 72H ---
+    let currentReturnTrip = null;
+    let cachedMembers = null;
+
+    async function openReturnTripModal(tripId, event) {
+      if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+      const trip = allTrips.find(t => t.id === tripId);
+      if (!trip) {
+        alert('Viagem não encontrada.');
+        return;
+      }
+      currentReturnTrip = trip;
+
+      document.getElementById('retTripId').value = trip.id;
+      document.getElementById('retModalOrigem').textContent = trip.destino || '--';
+      document.getElementById('retModalDestino').textContent = trip.origem || '--';
+      document.getElementById('retModalMeta').textContent = `Piloto: ${trip.nome_colete} (${trip.grau || 'Integrante'}) · Condução: ${trip.transporte_tipo || 'MOTO'}${trip.transporte_placa ? ` · ${trip.transporte_placa}` : ''}`;
+      document.getElementById('retEditFullFormLink').href = `/novo?retorno_de=${encodeURIComponent(trip.id)}`;
+
+      // Padrão: data de hoje e hora atual
+      const now = new Date();
+      const dateStr = now.toISOString().split('T')[0];
+      const hours = String(now.getHours()).padStart(2, '0');
+      const minutes = String(now.getMinutes()).padStart(2, '0');
+      document.getElementById('retDataSaida').value = dateStr;
+      document.getElementById('retHoraSaida').value = `${hours}:${minutes}`;
+
+      // Configuração dos acompanhantes
+      const vaiAcompRadios = document.getElementsByName('retVaiAcomp');
+      if (trip.vai_acompanhado === 'Sim') {
+        vaiAcompRadios[1].checked = true;
+      } else {
+        vaiAcompRadios[0].checked = true;
+      }
+      toggleRetCompanions(trip.acompanhantes || []);
+
+      document.getElementById('returnTripModal').style.display = 'flex';
+    }
+
+    function closeReturnTripModal() {
+      document.getElementById('returnTripModal').style.display = 'none';
+    }
+
+    function closeReturnDeliveryModal() {
+      document.getElementById('returnDeliveryModal').style.display = 'none';
+    }
+
+    async function loadMembersForReturn(preselected = []) {
+      const container = document.getElementById('retCompanionsList');
+      try {
+        if (!cachedMembers) {
+          const res = await fetch('/api/members');
+          if (!res.ok) throw new Error('Não foi possível listar integrantes');
+          cachedMembers = await res.json();
+        }
+        const preselectedIds = new Set(preselected.map(p => typeof p === 'object' ? p.id : p));
+        container.innerHTML = '';
+        if (cachedMembers.length === 0) {
+          container.innerHTML = '<div style="font-size: 0.8rem; color: var(--text-muted);">Nenhum integrante cadastrado.</div>';
+          return;
+        }
+        cachedMembers.forEach(m => {
+          const label = document.createElement('label');
+          label.style.cssText = 'display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; color: #cbd5e1; cursor: pointer;';
+          const chk = document.createElement('input');
+          chk.type = 'checkbox';
+          chk.name = 'ret_companion_option';
+          chk.value = m.id;
+          if (preselectedIds.has(m.id)) chk.checked = true;
+          chk.addEventListener('change', updateRetCompanionCount);
+          const span = document.createElement('span');
+          if (m.kind === 'contact') {
+            const rel = m.relacao && m.relacao !== 'Nenhum' ? ` - ${m.relacao.toLowerCase()}` : '';
+            span.textContent = `${m.nome}${rel} · ${m.telefone}`;
+          } else {
+            const role = [m.grau, m.funcao].filter(Boolean).join(' - ');
+            span.textContent = `${m.nome_colete}${role ? ` (${role})` : ''}`;
+          }
+          label.append(chk, span);
+          container.append(label);
+        });
+        updateRetCompanionCount();
+      } catch (err) {
+        container.innerHTML = `<div style="font-size: 0.8rem; color: #ef4444;">${err.message}</div>`;
+      }
+    }
+
+    function updateRetCompanionCount(event) {
+      const selected = document.querySelectorAll('input[name="ret_companion_option"]:checked');
+      if (selected.length > 4 && event && event.target) {
+        alert('Você pode selecionar no máximo 4 acompanhantes.');
+        event.target.checked = false;
+      }
+      const count = document.querySelectorAll('input[name="ret_companion_option"]:checked').length;
+      document.getElementById('retCompanionsCount').textContent = `${count} de 4 acompanhantes selecionados:`;
+    }
+
+    function toggleRetCompanions(preselected = []) {
+      const vaiAcomp = document.querySelector('input[name="retVaiAcomp"]:checked')?.value;
+      const box = document.getElementById('retCompanionsBox');
+      if (vaiAcomp === 'Sim') {
+        box.style.display = 'block';
+        loadMembersForReturn(preselected);
+      } else {
+        box.style.display = 'none';
+      }
+    }
+
+    async function submitReturnTrip(event) {
+      event.preventDefault();
+      const tripId = document.getElementById('retTripId').value;
+      const dataSaida = document.getElementById('retDataSaida').value;
+      const horaSaida = document.getElementById('retHoraSaida').value;
+      const vaiAcomp = document.querySelector('input[name="retVaiAcomp"]:checked')?.value || 'Não';
+      const companionIds = vaiAcomp === 'Sim'
+        ? [...document.querySelectorAll('input[name="ret_companion_option"]:checked')].map(c => c.value)
+        : [];
+
+      if (vaiAcomp === 'Sim' && companionIds.length === 0) {
+        alert('Selecione pelo menos um acompanhante cadastrado ou marque a opção "Não (Solo)".');
+        return;
+      }
+
+      const btn = document.getElementById('btnSubmitReturn');
+      btn.disabled = true;
+      btn.innerHTML = '<span>⚡ PROCESSANDO PROTOCOLO DE RETORNO...</span>';
+
+      try {
+        const res = await fetch(`/api/viagens/${encodeURIComponent(tripId)}/retorno`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            data_saida: dataSaida,
+            hora_saida: horaSaida,
+            vai_acompanhado: vaiAcomp,
+            companion_ids: companionIds
+          })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.error || 'Erro ao gerar protocolo de retorno.');
+        }
+
+        // Salva autenticação do criador para o novo protocolo de retorno
+        const savedAuth = {
+          id: data.id,
+          admin_token: data.admin_token,
+          share_token: data.share_token,
+          creator_pin: data.creator_pin
+        };
+        localStorage.setItem(`insanos_trip_${data.id}`, JSON.stringify(savedAuth));
+        localStorage.setItem('insanos_last_trip', JSON.stringify(savedAuth));
+
+        // Fecha modal de formulário e abre entrega
+        closeReturnTripModal();
+        openReturnDeliveryModal(data);
+
+        // Atualiza dashboard em segundo plano
+        fetchDashboardTrips(true);
+      } catch (err) {
+        alert('Falha ao gerar retorno: ' + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<img src="/images/caveirasembg.png" alt="Caveira" class="skull-btn-icon" style="height: 20px;"> <span>⚡ GERAR E ENTREGAR PROTOCOLO DE RETORNO</span> ➔';
+      }
+    }
+
+    let lastGeneratedReturnFicha = '';
+
+    function openReturnDeliveryModal(data) {
+      lastGeneratedReturnFicha = data.whatsapp_message || '';
+      document.getElementById('retFichaPreview').textContent = lastGeneratedReturnFicha;
+      const encodedMsg = encodeURIComponent(lastGeneratedReturnFicha);
+      document.getElementById('retBtnShareWhatsapp').href = `https://api.whatsapp.com/send?text=${encodedMsg}`;
+      document.getElementById('retBtnOpenRadar').href = data.tracker_url || `/tracker?id=${data.id}&share=${data.share_token}`;
+      document.getElementById('returnDeliveryModal').style.display = 'flex';
+    }
+
+    function copyReturnFicha() {
+      if (!lastGeneratedReturnFicha) return;
+      navigator.clipboard.writeText(lastGeneratedReturnFicha).then(() => {
+        const btn = document.getElementById('retBtnCopyFicha');
+        btn.innerHTML = '<span>✓ FICHA COPIADA!</span>';
+        setTimeout(() => {
+          btn.innerHTML = '<span>📋 Copiar Ficha Formatada</span>';
+        }, 2500);
+      }).catch(() => {
+        alert('Selecione e copie o texto diretamente.');
+      });
     }
   </script>
 </body>
