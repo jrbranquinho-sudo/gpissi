@@ -774,8 +774,9 @@ function buildAndShowModal(viagem) {
     }
   };
 
+  const pilotTrackerUrl = `${origin}/tracker?id=${viagem.id}&token=${encodeURIComponent(viagem.admin_token || '')}&pin=${encodeURIComponent(viagem.creator_pin || '')}`;
   const openTrackerBtn = document.getElementById('btnOpenTracker');
-  openTrackerBtn.href = publicTrackerUrl;
+  openTrackerBtn.href = pilotTrackerUrl;
 
   const modal = document.getElementById('successModal');
   modal.classList.add('active');

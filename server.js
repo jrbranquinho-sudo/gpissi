@@ -1381,6 +1381,32 @@ function isTripCreator(req, viagem, token, pin) {
   return false;
 }
 
+// API: Autentica Piloto via PIN para liberar transmissão GPS contínua em qualquer celular/navegador
+app.post('/api/viagens/:id/auth-pin', pinAuthLimiter, async (req, res) => {
+  const { id } = req.params;
+  const pin = req.body?.pin || req.headers['x-creator-pin'];
+  if (!isValidTripId(id)) {
+    return res.status(400).json({ error: 'ID de protocolo inválido.' });
+  }
+
+  const viagem = await storage.findTrip(id);
+  if (!viagem) {
+    return res.status(404).json({ error: 'Protocolo de viagem não encontrado ou expirado.' });
+  }
+
+  if (!pin || !viagem.creator_pin || String(pin).trim() !== String(viagem.creator_pin).trim()) {
+    return res.status(403).json({ error: 'PIN incorreto. Verifique o PIN cadastrado na criação do protocolo.' });
+  }
+
+  res.json({
+    success: true,
+    message: 'Piloto autenticado com sucesso! Transmissão GPS liberada.',
+    admin_token: viagem.admin_token,
+    creator_pin: viagem.creator_pin,
+    pilot_name: viagem.nome_colete
+  });
+});
+
 // API: Close trip (Creator only) - Protegido com pinAuthLimiter contra ataques de força bruta no PIN
 app.post('/api/viagens/:id/encerrar', pinAuthLimiter, loadOptionalAccount, async (req, res) => {
   const { id } = req.params;

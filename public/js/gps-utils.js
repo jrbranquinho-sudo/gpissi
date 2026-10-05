@@ -74,7 +74,7 @@ function isPointInRouteCorridor(pLat, pLng, origemGeo, destinoGeo, maxOffsetKm) 
   const tripDirectKm = distToSegmentKm(dLat, dLon, oLat, oLon, oLat, oLon);
   const effectiveMaxOffset = Number.isFinite(maxOffsetKm) && maxOffsetKm > 0
     ? maxOffsetKm
-    : Math.max(35, Math.min(120, tripDirectKm * 0.4));
+    : Math.max(60, Math.min(160, tripDirectKm * 0.6));
 
   const dist = distToSegmentKm(pLat, pLng, oLat, oLon, dLat, dLon);
   return dist <= effectiveMaxOffset;

@@ -58,6 +58,18 @@ document.addEventListener('DOMContentLoaded', () => {
     userAuthPin = cachedAuth.creator_pin;
   }
 
+  // Se parâmetros vieram na URL, salva no localStorage deste aparelho
+  if (tokenParam || pinParam) {
+    const toSave = cachedAuth || { id: tripId };
+    if (tokenParam) toSave.admin_token = tokenParam;
+    if (pinParam) toSave.creator_pin = pinParam;
+    localStorage.setItem(`insanos_trip_${tripId}`, JSON.stringify(toSave));
+    localStorage.setItem('insanos_last_trip', JSON.stringify(toSave));
+  }
+
+  // Tenta manter a tela ativa desde o primeiro momento
+  requestScreenWakeLock();
+
   initOpenFreeMap();
   loadTripData(tripId, false, shareToken);
 
@@ -593,7 +605,10 @@ function updateCreatorPanelUI(trip) {
     creatorShareSection.style.display = isCreatorAuth ? 'block' : 'none';
   }
 
+  const pilotCard = document.getElementById('pilotActivationCard');
+
   if (trip.status === 'CONCLUÍDA') {
+    if (pilotCard) pilotCard.style.display = 'none';
     if (activeActions) activeActions.style.display = 'none';
     if (authPrompt) authPrompt.style.display = 'none';
     if (gpsStatusBox) gpsStatusBox.style.display = 'none';
@@ -612,6 +627,7 @@ function updateCreatorPanelUI(trip) {
   }
 
   if (isCreatorAuth) {
+    if (pilotCard) pilotCard.style.display = 'none';
     if (authMsg) authMsg.innerHTML = '<strong>👑 Autenticado como Piloto:</strong> Você registrou este protocolo. O rastreamento atualiza seu trajeto e pontos de passagem a cada 5 segundos ou ao registrar sinal de internet:';
     if (activeActions) activeActions.style.display = 'flex';
     if (authPrompt) authPrompt.style.display = 'none';
@@ -619,32 +635,48 @@ function updateCreatorPanelUI(trip) {
     if (btnEditTrip) btnEditTrip.style.display = 'flex';
     if (btnDeleteTrip) btnDeleteTrip.style.display = 'flex';
   } else {
-    if (authMsg) authMsg.innerHTML = '🔒 <strong>Modo Acompanhamento:</strong> Você está visualizando o rastreamento em tempo real. Apenas o integrante responsável possui autorização para gerenciar a viagem.';
+    if (pilotCard) pilotCard.style.display = 'block';
+    if (authMsg) authMsg.innerHTML = '🔒 <strong>Modo Acompanhamento:</strong> Você está visualizando o rastreamento em tempo real dos integrantes.';
     if (activeActions) activeActions.style.display = 'none';
     if (authPrompt) authPrompt.style.display = 'none';
     if (gpsStatusBox) gpsStatusBox.style.display = 'none';
   }
 }
 
-// CONTINUOUS GPS WATCHER (Mantém coordenadas frescas de satélite sem atraso de fix)
-function startGpsWatcher() {
+// CONTINUOUS GPS WATCHER (Mantém coordenadas frescas de satélite e transmite ao deslocar)
+let lastTransmittedLat = null;
+let lastTransmittedLng = null;
+
+function startGpsWatcher(tripId) {
   if (!navigator.geolocation || gpsWatchId !== null) return;
   try {
     gpsWatchId = navigator.geolocation.watchPosition(
       (pos) => {
         if (pos && pos.coords && Number.isFinite(pos.coords.latitude) && Number.isFinite(pos.coords.longitude)) {
+          const lat = pos.coords.latitude;
+          const lng = pos.coords.longitude;
           lastKnownGpsPos = {
-            latitude: pos.coords.latitude,
-            longitude: pos.coords.longitude,
+            latitude: lat,
+            longitude: lng,
             accuracy: pos.coords.accuracy,
             timestamp: pos.timestamp || Date.now()
           };
+
+          // Transmissão por deslocamento: se moveu >= 35 metros desde o último envio, transmite imediatamente
+          if (tripId && isCreatorAuth && currentTrip && currentTrip.status === 'EM ANDAMENTO' && !isSendingGps) {
+            const distMovedKm = (lastTransmittedLat !== null && lastTransmittedLng !== null && typeof haversineDistanceKm === 'function')
+              ? haversineDistanceKm(lastTransmittedLat, lastTransmittedLng, lat, lng)
+              : Infinity;
+            if (distMovedKm >= 0.035) {
+              transmitGpsLocation(tripId, true);
+            }
+          }
         }
       },
       (err) => {
         console.warn('GPS Watcher oscilando:', err.message);
       },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 }
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 3000 }
     );
   } catch (e) {
     console.warn('Não foi possível iniciar watchPosition:', e);
@@ -663,7 +695,9 @@ function start10SecondAutoTracking(tripId) {
   if (autoTrackingInterval) clearInterval(autoTrackingInterval);
   if (countdownTimer) clearInterval(countdownTimer);
 
-  startGpsWatcher();
+  requestScreenWakeLock();
+  startKeepAliveAudio();
+  startGpsWatcher(tripId);
   trackCountdown = TRACK_INTERVAL_SECONDS;
 
   // Sincroniza eventuais pontos pendentes na fila offline
@@ -714,7 +748,7 @@ function stop5MinuteAutoTracking() {
   stop10SecondAutoTracking();
 }
 
-// TRANSMIT GPS LOCATION (Atualiza ponto de passagem a cada 10s ou ao registrar sinal de internet)
+// TRANSMIT GPS LOCATION (Atualiza ponto de passagem a cada 5s ou ao registrar sinal de internet)
 async function transmitGpsLocation(tripId, isAutomatic = false) {
   if (isSendingGps) return;
   if (!navigator.geolocation) {
@@ -733,14 +767,14 @@ async function transmitGpsLocation(tripId, isAutomatic = false) {
     try {
       const timestamp = new Date(timestampMs || Date.now()).toISOString();
 
-      // Descartar leituras com erro extremo (> 2500m) para evitar IP estático de provedor
-      if (accuracy && accuracy > 2500) {
-        console.warn(`[GPISSI Telemetria] Ponto descartado por imprecisão (${Math.round(accuracy)}m).`);
+      // Descartar leituras apenas com erro grosseiro (> 8000m) para não ignorar satélites na estrada
+      if (accuracy && accuracy > 8000) {
+        console.warn(`[GPISSI Telemetria] Ponto descartado por imprecisão excessiva (${Math.round(accuracy)}m).`);
         isSendingGps = false;
         if (!isAutomatic && btn) {
           btn.disabled = false;
           btn.innerHTML = '<span>📡 Transmitir Ponto no Trajeto Agora</span>';
-          alert(`Localização aproximada com margem de erro alta (${Math.round(accuracy / 1000)} km). Transmita pelo celular com GPS de satélite ativo.`);
+          alert(`Localização aproximada com margem de erro excessiva (${Math.round(accuracy / 1000)} km). Transmita pelo celular com GPS de satélite ativo.`);
         }
         return;
       }
@@ -774,6 +808,8 @@ async function transmitGpsLocation(tripId, isAutomatic = false) {
       if (!navigator.onLine) {
         saveOfflineCheckin(tripId, pointData);
         isSendingGps = false;
+        lastTransmittedLat = lat;
+        lastTransmittedLng = lng;
         if (!isAutomatic && btn) {
           btn.disabled = false;
           btn.innerHTML = '<span>📡 Transmitir Ponto no Trajeto Agora</span>';
@@ -801,6 +837,8 @@ async function transmitGpsLocation(tripId, isAutomatic = false) {
         throw new Error('Servidor retornou erro ao gravar ponto.');
       }
 
+      lastTransmittedLat = lat;
+      lastTransmittedLng = lng;
       showOfflineNotice(false);
       loadTripData(tripId, true, shareToken);
 
@@ -826,8 +864,8 @@ async function transmitGpsLocation(tripId, isAutomatic = false) {
     }
   };
 
-  // Se temos leitura recente (< 25s) do watchPosition, usa diretamente sem delay
-  if (lastKnownGpsPos && (Date.now() - lastKnownGpsPos.timestamp < 25000)) {
+  // Se temos leitura recente (< 15s) do watchPosition, usa diretamente sem delay
+  if (lastKnownGpsPos && (Date.now() - lastKnownGpsPos.timestamp < 15000)) {
     handleCoords(lastKnownGpsPos.latitude, lastKnownGpsPos.longitude, lastKnownGpsPos.accuracy, lastKnownGpsPos.timestamp);
     return;
   }
@@ -844,6 +882,7 @@ async function transmitGpsLocation(tripId, isAutomatic = false) {
     },
     (err) => {
       console.warn('Erro ao obter GPS:', err);
+      isSendingGps = false;
       showOfflineNotice(true);
       if (!isAutomatic && btn) {
         btn.disabled = false;
@@ -851,7 +890,7 @@ async function transmitGpsLocation(tripId, isAutomatic = false) {
         alert('Não foi possível obter sinal de satélite. O último registro de localização foi mantido.');
       }
     },
-    { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 }
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 4000 }
   );
 }
 
@@ -970,11 +1009,52 @@ async function requestScreenWakeLock() {
       wakeLockSentinel = await navigator.wakeLock.request('screen');
       wakeLockSentinel.addEventListener('release', () => {
         wakeLockSentinel = null;
+        updateWakeLockUI(false);
       });
       console.log('Screen Wake Lock ativo.');
+      updateWakeLockUI(true);
     }
   } catch (err) {
     console.warn('Screen Wake Lock indisponível:', err.message);
+    updateWakeLockUI(false);
+  }
+}
+
+function updateWakeLockUI(active) {
+  const tag = document.getElementById('wakeLockStatusTag');
+  if (tag) {
+    if (active) {
+      tag.innerHTML = '🔆 Tela mantida ativa para a estrada (Wake Lock)';
+      tag.style.color = '#00e676';
+    } else {
+      tag.innerHTML = '⚠️ Toque na tela para manter o celular sempre ativo';
+      tag.style.color = '#fbbf24';
+    }
+  }
+}
+
+let keepAliveAudio = null;
+function startKeepAliveAudio() {
+  try {
+    if (!keepAliveAudio) {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (AudioCtx) {
+        const ctx = new AudioCtx();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        // Quase inaudível, mas mantém o canal de mídia do sistema operacional acordado
+        gain.gain.setValueAtTime(0.00001, ctx.currentTime);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        keepAliveAudio = { ctx, osc };
+        console.log('Background KeepAlive Audio ativo.');
+      }
+    } else if (keepAliveAudio.ctx && keepAliveAudio.ctx.state === 'suspended') {
+      keepAliveAudio.ctx.resume();
+    }
+  } catch (e) {
+    console.warn('KeepAlive Audio não iniciado:', e.message);
   }
 }
 
@@ -1297,6 +1377,90 @@ function setupEventListeners(tripId) {
       transmitGpsLocation(tripId, false);
     });
   }
+
+  // PILOT PIN ACTIVATION (Permite ao piloto autenticar seu celular inserindo o PIN de 4 dígitos)
+  const btnActivatePilotGps = document.getElementById('btnActivatePilotGps');
+  const inputPilotPin = document.getElementById('inputPilotPin');
+  const pilotPinError = document.getElementById('pilotPinError');
+
+  if (btnActivatePilotGps && inputPilotPin) {
+    const handlePinActivation = async () => {
+      const pin = inputPilotPin.value.trim();
+      if (!pin) {
+        if (pilotPinError) {
+          pilotPinError.textContent = 'Por favor, digite o seu PIN de 4 dígitos.';
+          pilotPinError.style.display = 'block';
+        }
+        return;
+      }
+
+      btnActivatePilotGps.disabled = true;
+      btnActivatePilotGps.textContent = 'Validando...';
+      if (pilotPinError) pilotPinError.style.display = 'none';
+
+      try {
+        const res = await fetch(`/api/viagens/${tripId}/auth-pin`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pin })
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          throw new Error(data.error || 'PIN incorreto para esta viagem.');
+        }
+
+        userAuthPin = data.creator_pin;
+        userAuthToken = data.admin_token;
+        isCreatorAuth = true;
+
+        localStorage.setItem(`insanos_trip_${tripId}`, JSON.stringify({
+          tripId,
+          creator_pin: userAuthPin,
+          admin_token: userAuthToken,
+          savedAt: new Date().toISOString()
+        }));
+
+        if (currentTrip) {
+          updateCreatorPanelUI(currentTrip);
+        }
+
+        // Inicia rastreamento contínuo com Wake Lock e KeepAlive
+        start10SecondAutoTracking(tripId);
+        requestScreenWakeLock();
+        startKeepAliveAudio();
+
+        alert(`✓ Piloto ${data.pilot_name ? data.pilot_name + ' ' : ''}autenticado com sucesso!\n\nSeu celular agora está transmitindo sua rota a cada 5 segundos para o GPISSI.`);
+      } catch (err) {
+        if (pilotPinError) {
+          pilotPinError.textContent = err.message;
+          pilotPinError.style.display = 'block';
+        } else {
+          alert('⚠️ ' + err.message);
+        }
+      } finally {
+        btnActivatePilotGps.disabled = false;
+        btnActivatePilotGps.textContent = '📡 Ativar GPS';
+      }
+    };
+
+    btnActivatePilotGps.addEventListener('click', handlePinActivation);
+    inputPilotPin.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        handlePinActivation();
+      }
+    });
+  }
+
+  // Manter wake lock e áudio ativos ao interagir com a tela (requisito de navegadores mobile)
+  const ensureWakeLockOnInteraction = () => {
+    if (isCreatorAuth) {
+      requestScreenWakeLock();
+      startKeepAliveAudio();
+    }
+  };
+  document.addEventListener('touchstart', ensureWakeLockOnInteraction, { passive: true });
+  document.addEventListener('click', ensureWakeLockOnInteraction);
 
   // Delete trip listener
   const btnDeleteTrip = document.getElementById('btnDeleteTrip');

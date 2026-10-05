@@ -368,6 +368,16 @@ test('cadastro e login mostram desafio visual e renovam sequência incorreta', a
   assert.ok(returnTripRes.body.tracker_url);
   assert.match(returnTripRes.body.whatsapp_message, /GPISSI - PROTOCOLO DE VIAGEM/);
 
+  // Teste de Autenticação do Piloto via PIN (/auth-pin)
+  const pinAuthFail = await postJson(`/api/viagens/${trip.body.id}/auth-pin`, { pin: '9999' });
+  assert.equal(pinAuthFail.response.status, 403);
+
+  const pinAuthSuccess = await postJson(`/api/viagens/${trip.body.id}/auth-pin`, { pin: trip.body.creator_pin });
+  assert.equal(pinAuthSuccess.response.status, 200);
+  assert.equal(pinAuthSuccess.body.success, true);
+  assert.equal(pinAuthSuccess.body.admin_token, trip.body.admin_token);
+  assert.equal(pinAuthSuccess.body.creator_pin, trip.body.creator_pin);
+
   // Teste de Exclusão da Viagem pelo autor
   const deleteTripRes = await fetch(`${baseUrl}/api/viagens/${trip.body.id}`, {
     method: 'DELETE',
