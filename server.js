@@ -913,13 +913,16 @@ app.get('/api/viagens/:id', loadOptionalAccount, async (req, res) => {
 
   viagem = await repairLegacyTripGeocodes(viagem);
 
-  const isCreator = Boolean(req.user && viagem.owner_user_id === req.user.id);
+  const shareValid = securelyMatches(shareToken, viagem.share_token);
   const isMember = Boolean(req.user);
 
-  const shareValid = securelyMatches(shareToken, viagem.share_token);
-  if (!isCreator && !isMember && !shareValid) {
+  if (!isMember && !shareValid) {
     return res.status(404).json({ error: 'Link de rastreamento inválido ou expirado.' });
   }
+
+  const token = req.headers['x-creator-token'] || req.query.token;
+  const tokenValid = token && viagem.admin_token && token === viagem.admin_token;
+  const isCreator = Boolean((req.user && viagem.owner_user_id === req.user.id) || tokenValid);
 
   const publicData = { ...viagem };
   if (!isCreator) {
@@ -1074,7 +1077,7 @@ app.post('/api/viagens', createTripLimiter, requireAccount, async (req, res) => 
       hora_saida: sanitizeString(hora_saida, 10),
       destino: cleanDestino,
       destino_geo: destinoGeo,
-      previsao_chegada: sanitizeString(previsao_chegada, 30),
+      previsao_chegada: sanitizeString(previsao_chegada, 120),
       data_retorno: sanitizeString(data_retorno || data_saida, 15),
       nome_colete: cleanNomeColete,
       grau: cleanGrau,
@@ -1126,6 +1129,14 @@ app.post('/api/viagens', createTripLimiter, requireAccount, async (req, res) => 
   }
 });
 
+function isTripCreator(req, viagem, token, pin) {
+  if (!viagem) return false;
+  if (req.user && viagem.owner_user_id === req.user.id) return true;
+  if (token && viagem.admin_token && token === viagem.admin_token) return true;
+  if (pin && viagem.creator_pin && String(pin).trim() === String(viagem.creator_pin).trim()) return true;
+  return false;
+}
+
 // API: Close trip (Creator only) - Protegido com pinAuthLimiter contra ataques de força bruta no PIN
 app.post('/api/viagens/:id/encerrar', pinAuthLimiter, loadOptionalAccount, async (req, res) => {
   const { id } = req.params;
@@ -1146,13 +1157,9 @@ app.post('/api/viagens/:id/encerrar', pinAuthLimiter, loadOptionalAccount, async
     return res.status(400).json({ error: 'Este protocolo de viagem já foi encerrado.' });
   }
 
-  const tokenValid = token && viagem.admin_token && token === viagem.admin_token;
-  const pinValid = pin && viagem.creator_pin && String(pin).trim() === String(viagem.creator_pin).trim();
-
-  const ownerValid = req.user && viagem.owner_user_id === req.user.id;
-  if (!tokenValid && !pinValid && !ownerValid) {
+  if (!isTripCreator(req, viagem, token, pin)) {
     return res.status(403).json({
-      error: 'ACESSO NEGADO: Apenas quem registrou o protocolo pode encerrar a viagem! Informe o Token ou PIN de Segurança correto.'
+      error: 'ACESSO NEGADO: Apenas quem registrou o protocolo pode encerrar a viagem.'
     });
   }
 
@@ -1258,7 +1265,7 @@ app.put('/api/viagens/:id', pinAuthLimiter, loadOptionalAccount, async (req, res
   // Datas e horários
   if (b.data_saida) viagem.data_saida = sanitizeString(b.data_saida, 15);
   if (b.hora_saida) viagem.hora_saida = sanitizeString(b.hora_saida, 10);
-  if (b.previsao_chegada) viagem.previsao_chegada = sanitizeString(b.previsao_chegada, 40);
+  if (b.previsao_chegada) viagem.previsao_chegada = sanitizeString(b.previsao_chegada, 120);
   if (b.data_retorno) viagem.data_retorno = sanitizeString(b.data_retorno, 15);
 
   // Veículo

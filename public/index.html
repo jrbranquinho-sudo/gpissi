@@ -20,20 +20,12 @@
   <meta name="theme-color" content="#ff6600">
   <meta name="mobile-web-app-capable" content="yes">
   <script>
-    // Se o usuário estava na tela de rastreador e deu refresh na URL mascarada (/), restaura o rastreador
-    const activeTrackerId = sessionStorage.getItem('tracker_trip_id');
-    const activeShareToken = sessionStorage.getItem('tracker_share_token');
-    if (sessionStorage.getItem('on_tracker_page') === '1' && activeTrackerId) {
-      const shareQuery = activeShareToken ? `&share=${encodeURIComponent(activeShareToken)}` : '';
-      window.location.replace(`/tracker?id=${encodeURIComponent(activeTrackerId)}${shareQuery}`);
-    } else {
-      // Abre imediatamente na tela de login se não houver sessão ativa
-      fetch('/api/auth/me').then(res => {
-        if (!res.ok) window.location.replace('/conta');
-      }).catch(() => {
-        window.location.replace('/conta');
-      });
-    }
+    // Valida autenticação do usuário logado
+    fetch('/api/auth/me').then(res => {
+      if (!res.ok) window.location.replace('/conta');
+    }).catch(() => {
+      window.location.replace('/conta');
+    });
   </script>
   <style>
     /* DASHBOARD SPECIFIC STYLES */
@@ -478,9 +470,11 @@
           const last = t.checkins[t.checkins.length - 1];
           lastLoc = last.cidade || 'Em deslocamento na Rodovia';
         }
+        const shareParam = t.share_token ? `&share=${encodeURIComponent(t.share_token)}` : '';
+        const tripUrl = `/tracker?id=${encodeURIComponent(t.id)}${shareParam}`;
 
         return `
-          <div class="dash-card active-trip" onclick="window.location.href='/tracker?id=${encodeURIComponent(t.id)}&share=${encodeURIComponent(t.share_token || '')}'">
+          <a href="${tripUrl}" class="dash-card active-trip" style="text-decoration: none; color: inherit; display: flex;">
             <div class="dash-card-pilot">
               <div>
                 <div class="dash-pilot-name">
@@ -509,7 +503,7 @@
               <span>📍 Ponto: <strong style="color: var(--issi-orange-bright);">${lastLoc}</strong></span>
               <span class="dash-click-hint">Abrir no Radar ➔</span>
             </div>
-          </div>
+          </a>
         `;
       }).join('');
     }
@@ -534,9 +528,11 @@
           const d = new Date(t.closed_at);
           closedTimeStr = `${d.toLocaleDateString('pt-BR')} às ${d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
         }
+        const shareParam = t.share_token ? `&share=${encodeURIComponent(t.share_token)}` : '';
+        const tripUrl = `/tracker?id=${encodeURIComponent(t.id)}${shareParam}`;
 
         return `
-          <div class="dash-card closed-trip" onclick="window.location.href='/tracker?id=${encodeURIComponent(t.id)}&share=${encodeURIComponent(t.share_token || '')}'">
+          <a href="${tripUrl}" class="dash-card closed-trip" style="text-decoration: none; color: inherit; display: flex;">
             <div class="dash-card-pilot">
               <div>
                 <div class="dash-pilot-name">
@@ -565,7 +561,7 @@
               <span><em>"${t.encerramento_motivo || 'Chegada confirmada'}"</em></span>
               <span class="dash-click-hint" style="color: var(--accent-green);">Ver Histórico ➔</span>
             </div>
-          </div>
+          </a>
         `;
       }).join('');
     }

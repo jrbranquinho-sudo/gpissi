@@ -39,17 +39,6 @@ document.addEventListener('DOMContentLoaded', () => {
     shareToken = sessionStorage.getItem('tracker_share_token');
   }
 
-  // Mask tracking link in browser address bar to show only base domain
-  try {
-    window.history.replaceState({ tripId, shareToken }, document.title, '/');
-  } catch (e) {}
-
-  document.querySelectorAll('.navbar a').forEach(a => {
-    a.addEventListener('click', () => {
-      sessionStorage.removeItem('on_tracker_page');
-    });
-  });
-
   if (!tripId) {
     alert('Nenhum identificador de viagem fornecido.');
     window.location.href = '/radar';
@@ -95,9 +84,18 @@ function initOpenFreeMap() {
   map.addControl(new maplibregl.NavigationControl(), 'top-right');
   map.addControl(new maplibregl.FullscreenControl(), 'top-right');
   map.on('error', event => console.warn('Erro no mapa:', event.error || event));
-  map.on('load', () => {
+  
+  const onReady = () => {
     map.resize();
     if (currentTrip) renderMapElements(currentTrip);
+  };
+  map.on('load', onReady);
+  map.on('styledata', () => {
+    map.resize();
+    if (currentTrip) renderMapElements(currentTrip);
+  });
+  window.addEventListener('resize', () => {
+    if (map) map.resize();
   });
 
   document.getElementById('btnFitMap').addEventListener('click', () => {
@@ -112,7 +110,10 @@ async function loadTripData(tripId, isSilent = false, shareToken = '') {
     if (userAuthPin) headers['x-creator-pin'] = userAuthPin;
 
     const shareQuery = shareToken ? `?share=${encodeURIComponent(shareToken)}` : '';
-    const res = await fetch(`/api/viagens/${tripId}${shareQuery}`, { headers });
+    const res = await fetch(`/api/viagens/${tripId}${shareQuery}`, {
+      headers,
+      credentials: 'same-origin'
+    });
     if (!res.ok) {
       if (res.status === 404) {
         alert('Link de rastreamento inválido ou expirado. Acompanhe a viagem pelo link compartilhado pelo responsável.');
@@ -192,10 +193,39 @@ function renderTripDetails(trip) {
 
   document.getElementById('statRouteName').textContent = `${trip.origem} ➔ ${trip.destino}`;
 
+  // Estimativa prévia imediata de distância e duração (evita ficar 'Calculando...')
+  if (trip.origem_geo && trip.destino_geo) {
+    const R = 6371;
+    const dLat = (trip.destino_geo.lat - trip.origem_geo.lat) * Math.PI / 180;
+    const dLon = (trip.destino_geo.lon - trip.origem_geo.lon) * Math.PI / 180;
+    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+      Math.cos(trip.origem_geo.lat * Math.PI / 180) * Math.cos(trip.destino_geo.lat * Math.PI / 180) *
+      Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    const distEst = Math.round(R * c * 1.25);
+    const speed = (trip.transporte_tipo === 'ÔNIBUS' || trip.transporte_tipo === 'ONIBUS') ? 80 : 110;
+    const durH = Math.floor(distEst / speed);
+    const durM = Math.round(((distEst / speed) % 1) * 60);
+
+    const distEl = document.getElementById('statDistance');
+    const durEl = document.getElementById('statDuration');
+    if (distEl) distEl.textContent = `${distEst} km`;
+    if (durEl) durEl.textContent = `${durH}h ${durM}min`;
+  }
+
   // Integrante
   document.getElementById('valNomeColete').textContent = trip.nome_colete;
   document.getElementById('valGrau').textContent = trip.grau || 'CAMISETA - X';
-  document.getElementById('valTelefone').textContent = trip.telefone;
+  
+  const telContainer = document.getElementById('valTelefone');
+  if (trip.telefone) {
+    const rawDigits = trip.telefone.replace(/\D/g, '');
+    const fullWaNumber = rawDigits.startsWith('55') ? rawDigits : `55${rawDigits}`;
+    telContainer.innerHTML = `<a href="https://wa.me/${fullWaNumber}" target="_blank" rel="noopener noreferrer" style="color: #25d366; text-decoration: none; display: inline-flex; align-items: center; gap: 0.35rem; font-weight: 700; white-space: nowrap;" title="Conversar no WhatsApp"><span>📱</span> <span>${trip.telefone}</span></a>`;
+  } else {
+    telContainer.textContent = 'Não informado';
+  }
+
   document.getElementById('valTransporte').textContent = trip.transporte_tipo;
   
   let vDesc = trip.transporte_detalhe;
@@ -388,14 +418,14 @@ function updateCreatorPanelUI(trip) {
   if (isCreatorAuth) {
     authMsg.innerHTML = '<strong>👑 Autenticado como Piloto:</strong> Você registrou este protocolo. O rastreamento atualiza seu trajeto e pontos de passagem a cada 10 segundos ou ao registrar sinal de internet:';
     activeActions.style.display = 'flex';
-    authPrompt.style.display = 'none';
+    if (authPrompt) authPrompt.style.display = 'none';
     if (gpsStatusBox) gpsStatusBox.style.display = 'block';
     if (btnEditTrip) btnEditTrip.style.display = 'flex';
     if (btnDeleteTrip) btnDeleteTrip.style.display = 'flex';
   } else {
-    authMsg.innerHTML = '🔒 <strong>Modo Visitante:</strong> Você está visualizando o rastreamento em tempo real. Apenas o integrante que registrou o protocolo possui autorização para gerenciar a viagem.';
+    authMsg.innerHTML = '🔒 <strong>Modo Acompanhamento:</strong> Você está visualizando o rastreamento em tempo real. Apenas o integrante responsável possui autorização para gerenciar a viagem.';
     activeActions.style.display = 'none';
-    authPrompt.style.display = 'block';
+    if (authPrompt) authPrompt.style.display = 'none';
     if (gpsStatusBox) gpsStatusBox.style.display = 'none';
   }
 }
@@ -688,6 +718,21 @@ function showOfflineNotice(isOffline) {
   }
 }
 
+let wakeLockSentinel = null;
+async function requestScreenWakeLock() {
+  try {
+    if ('wakeLock' in navigator && !wakeLockSentinel) {
+      wakeLockSentinel = await navigator.wakeLock.request('screen');
+      wakeLockSentinel.addEventListener('release', () => {
+        wakeLockSentinel = null;
+      });
+      console.log('Screen Wake Lock ativo.');
+    }
+  } catch (err) {
+    console.warn('Screen Wake Lock indisponível:', err.message);
+  }
+}
+
 function setupNetworkListeners(tripId) {
   // Dispara imediatamente ao registrar sinal de internet
   window.addEventListener('online', () => {
@@ -699,6 +744,18 @@ function setupNetworkListeners(tripId) {
 
   window.addEventListener('offline', () => {
     showOfflineNotice(true);
+  });
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      if (currentTrip && currentTrip.status === 'EM ANDAMENTO') {
+        if (isCreatorAuth) requestScreenWakeLock();
+        loadTripData(tripId, true, shareToken);
+        if (isCreatorAuth) {
+          syncOfflineCheckins(tripId).finally(() => transmitGpsLocation(tripId, true));
+        }
+      }
+    }
   });
 }
 
@@ -714,7 +771,15 @@ function renderMapElements(trip) {
 
   // Wait for map style to be loaded if not yet ready
   if (!map.isStyleLoaded()) {
-    map.once('style.load', () => renderMapElements(trip));
+    const onStyleReady = () => {
+      if (map.isStyleLoaded()) {
+        map.off('styledata', onStyleReady);
+        map.off('load', onStyleReady);
+        renderMapElements(trip);
+      }
+    };
+    map.on('styledata', onStyleReady);
+    map.on('load', onStyleReady);
     return;
   }
 
@@ -915,89 +980,63 @@ function fitRouteBounds() {
 }
 
 function setupEventListeners(tripId) {
-  const btnAuthPin = document.getElementById('btnAuthPin');
-  if (btnAuthPin) {
-    btnAuthPin.addEventListener('click', () => {
-      const pin = document.getElementById('inputPinAuth').value.trim();
-      if (!pin) {
-        alert('Digite o PIN de 4 dígitos cadastrado na criação do protocolo.');
-        return;
-      }
-      userAuthPin = pin;
-      loadTripData(tripId, false, shareToken);
-    });
-  }
-
   const btnCloseTrip = document.getElementById('btnCloseTrip');
   const closeTripModal = document.getElementById('closeTripModal');
   const btnCancelCloseModal = document.getElementById('btnCancelCloseModal');
   const btnCancelCloseTrip = document.getElementById('btnCancelCloseTrip');
   const btnConfirmCloseTrip = document.getElementById('btnConfirmCloseTrip');
-  const pinConfirmBox = document.getElementById('pinConfirmBox');
 
-  btnCloseTrip.addEventListener('click', () => {
-    if (!isCreatorAuth && !userAuthPin) {
-      pinConfirmBox.style.display = 'block';
-    } else {
-      pinConfirmBox.style.display = 'none';
-    }
-    closeTripModal.classList.add('active');
-  });
+  if (btnCloseTrip) {
+    btnCloseTrip.addEventListener('click', () => {
+      if (closeTripModal) closeTripModal.classList.add('active');
+    });
+  }
 
   const closeModal = () => {
-    closeTripModal.classList.remove('active');
+    if (closeTripModal) closeTripModal.classList.remove('active');
   };
-  btnCancelCloseModal.addEventListener('click', closeModal);
-  btnCancelCloseTrip.addEventListener('click', closeModal);
+  if (btnCancelCloseModal) btnCancelCloseModal.addEventListener('click', closeModal);
+  if (btnCancelCloseTrip) btnCancelCloseTrip.addEventListener('click', closeModal);
 
-  btnConfirmCloseTrip.addEventListener('click', async () => {
-    const motivo = document.getElementById('closeMotivoInput').value.trim();
-    let pinToSend = userAuthPin;
+  if (btnConfirmCloseTrip) {
+    btnConfirmCloseTrip.addEventListener('click', async () => {
+      const motivo = document.getElementById('closeMotivoInput').value.trim();
 
-    if (!isCreatorAuth && !userAuthToken) {
-      const inputPin = document.getElementById('closePinInput').value.trim();
-      if (!inputPin) {
-        alert('Por favor, informe seu PIN de Segurança para confirmar que você é o autor.');
-        return;
+      btnConfirmCloseTrip.disabled = true;
+      btnConfirmCloseTrip.textContent = 'Encerrando...';
+
+      try {
+        const headers = { 'Content-Type': 'application/json' };
+        if (userAuthToken) headers['x-creator-token'] = userAuthToken;
+
+        const res = await fetch(`/api/viagens/${tripId}/encerrar`, {
+          method: 'POST',
+          headers,
+          credentials: 'same-origin',
+          body: JSON.stringify({
+            motivo,
+            token: userAuthToken
+          })
+        });
+
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.error || 'Acesso negado para encerrar a viagem.');
+        }
+
+        closeModal();
+        alert('✓ VIAGEM ENCERRADA COM SUCESSO!\n\nChegada confirmada pelo integrante. O protocolo foi marcado como concluído no GPISSI.');
+        stop5MinuteAutoTracking();
+        loadTripData(tripId);
+
+      } catch (err) {
+        alert('⚠️ ' + err.message);
+      } finally {
+        btnConfirmCloseTrip.disabled = false;
+        btnConfirmCloseTrip.textContent = 'Confirmar Encerramento 🏁';
       }
-      pinToSend = inputPin;
-    }
-
-    btnConfirmCloseTrip.disabled = true;
-    btnConfirmCloseTrip.textContent = 'Encerrando...';
-
-    try {
-      const headers = { 'Content-Type': 'application/json' };
-      if (userAuthToken) headers['x-creator-token'] = userAuthToken;
-      if (pinToSend) headers['x-creator-pin'] = pinToSend;
-
-      const res = await fetch(`/api/viagens/${tripId}/encerrar`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          motivo,
-          pin: pinToSend,
-          token: userAuthToken
-        })
-      });
-
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Acesso negado para encerrar a viagem.');
-      }
-
-      closeModal();
-      alert('✓ VIAGEM ENCERRADA COM SUCESSO!\n\nChegada confirmada pelo integrante. O protocolo foi marcado como concluído no GPISSI.');
-      stop5MinuteAutoTracking();
-      loadTripData(tripId);
-
-    } catch (err) {
-      alert('⚠️ ' + err.message);
-    } finally {
-      btnConfirmCloseTrip.disabled = false;
-      btnConfirmCloseTrip.textContent = 'Confirmar Encerramento 🏁';
-    }
-  });
+    });
+  }
 
   const btnTransmitGps = document.getElementById('btnTransmitGps');
   if (btnTransmitGps) {
@@ -1013,21 +1052,15 @@ function setupEventListeners(tripId) {
       const confirmDelete = confirm('⚠️ ATENÇÃO: Tem certeza de que deseja apagar permanentemente esta viagem?\n\nEsta ação excluirá o protocolo e todo o histórico de rastreamento.');
       if (!confirmDelete) return;
 
-      let pinToSend = userAuthPin;
-      if (!isCreatorAuth && !userAuthToken && !pinToSend) {
-        pinToSend = prompt('Digite seu PIN de segurança para autorizar a exclusão:');
-        if (!pinToSend) return;
-      }
-
       try {
         const headers = { 'Content-Type': 'application/json' };
         if (userAuthToken) headers['x-creator-token'] = userAuthToken;
-        if (pinToSend) headers['x-creator-pin'] = pinToSend;
 
         const res = await fetch(`/api/viagens/${tripId}`, {
           method: 'DELETE',
           headers,
-          body: JSON.stringify({ pin: pinToSend, token: userAuthToken })
+          credentials: 'same-origin',
+          body: JSON.stringify({ token: userAuthToken })
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Falha ao apagar viagem.');
@@ -1051,7 +1084,6 @@ function setupEventListeners(tripId) {
   const btnCancelEditModal = document.getElementById('btnCancelEditModal');
   const btnCancelEditTrip = document.getElementById('btnCancelEditTrip');
   const editTripForm = document.getElementById('editTripForm');
-  const editPinConfirmBox = document.getElementById('editPinConfirmBox');
 
   const closeEditModal = () => {
     if (editTripModal) editTripModal.classList.remove('active');
@@ -1081,11 +1113,7 @@ function setupEventListeners(tripId) {
       document.getElementById('editNotas').value = currentTrip.observacoes_notas || '';
       document.getElementById('editResumo').value = currentTrip.observacoes_resumo || '';
 
-      if (editPinConfirmBox) {
-        editPinConfirmBox.style.display = (!isCreatorAuth && !userAuthPin) ? 'block' : 'none';
-      }
-
-      editTripModal.classList.add('active');
+      if (editTripModal) editTripModal.classList.add('active');
     });
   }
 
