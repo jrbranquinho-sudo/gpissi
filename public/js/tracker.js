@@ -180,9 +180,10 @@ function renderTripDetails(trip) {
   }
 
   // Status Badge
+  const isClosed = trip.status === 'CONCLUÍDA';
   const statusContainer = document.getElementById('tripStatusContainer');
   const closedNoticeCard = document.getElementById('closedNoticeCard');
-  if (trip.status === 'CONCLUÍDA') {
+  if (isClosed) {
     if (statusContainer) {
       statusContainer.innerHTML = `
         <div class="status-badge closed">
