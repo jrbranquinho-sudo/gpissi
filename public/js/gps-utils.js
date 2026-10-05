@@ -82,7 +82,8 @@ function isPointInRouteCorridor(pLat, pLng, origemGeo, destinoGeo, maxOffsetKm) 
 
 function formatDateBR(dateString) {
   if (!dateString) return 'A definir';
-  const parts = String(dateString).split('-');
+  const cleanDate = String(dateString).split('T')[0];
+  const parts = cleanDate.split('-');
   if (parts.length === 3) {
     return `${parts[2]}/${parts[1]}/${parts[0]}`;
   }
@@ -103,7 +104,7 @@ function buildWhatsAppProtocolMessage(viagem, trackerUrl) {
 
   const motoCheck = tTipo === 'MOTO' ? `[X] MOTO${vSuffix}` : '[ ] MOTO';
   const carroCheck = tTipo === 'CARRO' ? `[X] CARRO${vSuffix}` : '[ ] CARRO';
-  const busCheck = tTipo === 'ÔNIBUS' ? `[X] ÔNIBUS${vSuffix}` : '[ ] ÔNIBUS';
+  const busCheck = (tTipo === 'ÔNIBUS' || tTipo === 'ONIBUS') ? `[X] ÔNIBUS${vSuffix}` : '[ ] ÔNIBUS';
 
   const statusUpper = String(viagem.status || 'EM ANDAMENTO').toUpperCase();
   let statusLine = '🔴 STATUS: EM ANDAMENTO (NA ESTRADA)';
@@ -114,7 +115,11 @@ function buildWhatsAppProtocolMessage(viagem, trackerUrl) {
   }
 
   const vaiAcomp = viagem.vai_acompanhado === 'Sim' ? 'Sim' : 'Não';
-  const quemJunto = vaiAcomp === 'Sim' ? (viagem.quem_vai_junto || 'Não informado') : 'Nenhum (Solo)';
+  let quemJunto = vaiAcomp === 'Sim' ? (viagem.quem_vai_junto || 'Não informado') : 'Nenhum (Solo)';
+  if (vaiAcomp === 'Sim' && Array.isArray(viagem.acompanhantes) && viagem.acompanhantes.length > 0) {
+    const nomes = viagem.acompanhantes.map(a => `${a.nome_colete || a.nome || 'Integrante'}${a.grau ? ` (${a.grau})` : ''}`).join(', ');
+    if (nomes) quemJunto = nomes;
+  }
 
   const notas = viagem.observacoes_notas && viagem.observacoes_notas.trim()
     ? viagem.observacoes_notas.trim()

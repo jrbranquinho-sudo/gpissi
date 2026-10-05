@@ -655,13 +655,103 @@ function formatDateBR(dateString) {
   return dateString;
 }
 
+function buildOfficialWhatsAppProtocolMessage(viagem, trackerUrl) {
+  if (typeof GPISSIGps !== 'undefined' && GPISSIGps.buildWhatsAppProtocolMessage) {
+    return GPISSIGps.buildWhatsAppProtocolMessage(viagem, trackerUrl);
+  }
+
+  const formatDate = (dateString) => {
+    if (!dateString) return 'A definir';
+    const cleanDate = String(dateString).split('T')[0];
+    const parts = cleanDate.split('-');
+    if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
+    return String(dateString);
+  };
+
+  const tTipo = String(viagem.transporte_tipo || 'MOTO').toUpperCase();
+  let vDetalhe = viagem.transporte_detalhe || '';
+  if (!vDetalhe) {
+    const parts = [];
+    if (viagem.transporte_placa) parts.push(`Placa: ${viagem.transporte_placa}`);
+    const mm = `${viagem.transporte_marca || ''} ${viagem.transporte_modelo || ''}`.trim();
+    if (mm) parts.push(mm);
+    vDetalhe = parts.join(' | ');
+  }
+  const vSuffix = vDetalhe ? ` (${vDetalhe})` : '';
+
+  const motoCheck = tTipo === 'MOTO' ? `[X] MOTO${vSuffix}` : '[ ] MOTO';
+  const carroCheck = tTipo === 'CARRO' ? `[X] CARRO${vSuffix}` : '[ ] CARRO';
+  const busCheck = (tTipo === 'ÔNIBUS' || tTipo === 'ONIBUS') ? `[X] ÔNIBUS${vSuffix}` : '[ ] ÔNIBUS';
+
+  const statusUpper = String(viagem.status || 'EM ANDAMENTO').toUpperCase();
+  let statusLine = '🔴 STATUS: EM ANDAMENTO (NA ESTRADA)';
+  if (statusUpper === 'CONCLUÍDA' || statusUpper === 'CONCLUIDA') {
+    statusLine = '🟢 STATUS: CONCLUÍDA (DESTINO ALCANÇADO)';
+  } else if (statusUpper === 'CANCELADA') {
+    statusLine = '⚪ STATUS: CANCELADA';
+  }
+
+  const vaiAcomp = viagem.vai_acompanhado === 'Sim' ? 'Sim' : 'Não';
+  let quemJunto = vaiAcomp === 'Sim' ? (viagem.quem_vai_junto || 'Não informado') : 'Nenhum (Solo)';
+  if (vaiAcomp === 'Sim' && Array.isArray(viagem.acompanhantes) && viagem.acompanhantes.length > 0) {
+    const nomes = viagem.acompanhantes.map(a => `${a.nome_colete || a.nome || 'Integrante'}${a.grau ? ` (${a.grau})` : ''}`).join(', ');
+    if (nomes) quemJunto = nomes;
+  }
+
+  const notas = viagem.observacoes_notas && viagem.observacoes_notas.trim()
+    ? viagem.observacoes_notas.trim()
+    : 'Nenhuma observação informada.';
+  const resumo = viagem.observacoes_resumo && viagem.observacoes_resumo.trim()
+    ? viagem.observacoes_resumo.trim()
+    : 'Sem relato prévio.';
+
+  const urlFinal = trackerUrl || (viagem.id ? `https://gpissi.vercel.app/tracker?id=${viagem.id}` : '');
+
+  return `*GPISSI - PROTOCOLO DE VIAGEM - INSANOS MC*
+🏍️ INSANO NA ESTRADA
+
+📍 INFORMAÇÕES DA ROTA
+Origem: ${viagem.origem || 'Não informada'}
+Data de Saída: ${formatDate(viagem.data_saida)}
+Hora de Saída: ${viagem.hora_saida || 'A definir'}
+Destino: ${viagem.destino || 'Não informado'}
+Previsão de Chegada: ${viagem.previsao_chegada || 'Conforme condições de tráfego'}
+Data de Retorno: ${formatDate(viagem.data_retorno || viagem.data_saida)}
+
+👤 DADOS DO INTEGRANTE
+Nome do Colete: ${viagem.nome_colete || 'Não informado'}
+Função/Grau: ${viagem.grau || 'Integrante'}
+Telefone: ${viagem.telefone || 'Não informado'}
+
+🚌 VEÍCULO
+${motoCheck}
+${carroCheck}
+${busCheck}
+
+👥 ACOMPANHANTE(S)
+Vai acompanhado? ${vaiAcomp}
+Quem vai junto? ${quemJunto}
+
+🆘 EMERGÊNCIA
+Contato: ${viagem.emergencia_contato || 'Não informado'}
+Telefone: ${viagem.emergencia_telefone || 'Não informado'}
+
+📝 OBSERVAÇÕES E RESUMO
+Notas: ${notas}
+Resumo: ${resumo}
+
+${statusLine}
+🗺️ ACOMPANHE EM TEMPO REAL NO MAPA (GPISSI):
+${urlFinal}
+*(Ficha válida por até 72h)*`;
+}
+
 function buildAndShowModal(viagem) {
   const origin = window.location.origin;
-  const publicTrackerUrl = `${origin}/tracker?id=${viagem.id}&share=${encodeURIComponent(viagem.share_token)}`;
+  const shareParam = viagem.share_token ? `&share=${encodeURIComponent(viagem.share_token)}` : '';
+  const publicTrackerUrl = `${origin}/tracker?id=${viagem.id}${shareParam}`;
 
-  const formattedMessage = (typeof GPISSIGps !== 'undefined' && GPISSIGps.buildWhatsAppProtocolMessage)
-    ? GPISSIGps.buildWhatsAppProtocolMessage(viagem, publicTrackerUrl)
-    : `*GPISSI - PROTOCOLO DE VIAGEM - INSANOS MC*\n🏍️ INSANO NA ESTRADA\n\n📍 INFORMAÇÕES DA ROTA\nOrigem: ${viagem.origem}\nDestino: ${viagem.destino}\n\n${publicTrackerUrl}`;
+  const formattedMessage = buildOfficialWhatsAppProtocolMessage(viagem, publicTrackerUrl);
 
   const previewBox = document.getElementById('fichaPreview');
   previewBox.textContent = formattedMessage;
