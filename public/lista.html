@@ -78,11 +78,14 @@
           </div>
           <div class="route-stat-item">
             <span>📡 Atualização:</span>
-            <strong style="color: #00e676;">A cada 10s no trajeto</strong>
+            <strong style="color: #00e676;">A cada 5s no trajeto</strong>
           </div>
         </div>
-        <div style="font-size: 0.82rem; color: var(--text-muted);">
-          Mapas fornecidos por OpenFreeMap (Liberty)
+        <div class="map-style-selector" id="radarMapStyleSelector">
+          <button type="button" class="btn-map-style active" data-style="3d" title="Modo 3D com perspectiva e relevo">🌐 3D</button>
+          <button type="button" class="btn-map-style" data-style="dark" title="Tema Escuro Tático Insanos MC">🌑 Escuro</button>
+          <button type="button" class="btn-map-style" data-style="liberty" title="Mapa Rodoviário Completo">🗺️ Estrada</button>
+          <button type="button" class="btn-map-style" data-style="bright" title="Mapa de Alto Contraste Claro">☀️ Claro</button>
         </div>
       </div>
 
@@ -132,6 +135,108 @@
     let radarMap = null;
     let radarMarkers = [];
 
+    // OpenFreeMap Styles & 3D Configuration
+    const MAP_STYLES = {
+      '3d': {
+        id: '3d',
+        label: '🌐 3D',
+        url: 'https://tiles.openfreemap.org/styles/liberty',
+        pitch: 55,
+        bearing: 0,
+        has3dBuildings: true
+      },
+      'dark': {
+        id: 'dark',
+        label: '🌑 Escuro',
+        url: 'https://tiles.openfreemap.org/styles/dark',
+        pitch: 45,
+        bearing: 0,
+        has3dBuildings: true
+      },
+      'liberty': {
+        id: 'liberty',
+        label: '🗺️ Estrada',
+        url: 'https://tiles.openfreemap.org/styles/liberty',
+        pitch: 0,
+        bearing: 0,
+        has3dBuildings: false
+      },
+      'bright': {
+        id: 'bright',
+        label: '☀️ Claro',
+        url: 'https://tiles.openfreemap.org/styles/bright',
+        pitch: 0,
+        bearing: 0,
+        has3dBuildings: false
+      }
+    };
+
+    let currentMapStyleKey = '3d';
+    try {
+      currentMapStyleKey = localStorage.getItem('insanos_map_style') || '3d';
+    } catch (e) {}
+
+    function ensure3DBuildings(targetMap) {
+      if (!targetMap || !targetMap.getSource('openmaptiles')) return;
+      if (!targetMap.getLayer('building-3d')) {
+        targetMap.addLayer({
+          id: 'building-3d',
+          type: 'fill-extrusion',
+          source: 'openmaptiles',
+          'source-layer': 'building',
+          minzoom: 14,
+          paint: {
+            'fill-extrusion-base': ['get', 'render_min_height'],
+            'fill-extrusion-color': '#444455',
+            'fill-extrusion-height': ['get', 'render_height'],
+            'fill-extrusion-opacity': 0.8
+          }
+        });
+      }
+    }
+
+    function applyRadarMapStyle(styleKey) {
+      const styleConfig = MAP_STYLES[styleKey] || MAP_STYLES['3d'];
+      currentMapStyleKey = styleConfig.id;
+      try {
+        localStorage.setItem('insanos_map_style', currentMapStyleKey);
+      } catch (e) {}
+
+      document.querySelectorAll('#radarMapStyleSelector .btn-map-style').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.style === currentMapStyleKey);
+      });
+
+      if (!radarMap) return;
+
+      radarMap.setStyle(styleConfig.url);
+
+      radarMap.once('style.load', () => {
+        if (styleConfig.has3dBuildings) {
+          ensure3DBuildings(radarMap);
+        }
+        renderRadarMapPins();
+      });
+
+      radarMap.easeTo({
+        pitch: styleConfig.pitch,
+        bearing: styleConfig.bearing,
+        duration: 800
+      });
+    }
+
+    function setupRadarStyleButtons() {
+      document.querySelectorAll('#radarMapStyleSelector .btn-map-style').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.style === currentMapStyleKey);
+        btn.addEventListener('click', (e) => {
+          e.preventDefault();
+          const style = btn.dataset.style;
+          if (style) {
+            applyRadarMapStyle(style);
+          }
+        });
+      });
+    }
+
     document.addEventListener('DOMContentLoaded', () => {
       initRadarMap();
       fetchTrips();
@@ -158,15 +263,33 @@
     });
 
     function initRadarMap() {
+      const savedStyle = (function() {
+        try { return localStorage.getItem('insanos_map_style') || '3d'; } catch (e) { return '3d'; }
+      })();
+      const styleConfig = MAP_STYLES[savedStyle] || MAP_STYLES['3d'];
+      currentMapStyleKey = styleConfig.id;
+
       radarMap = new maplibregl.Map({
         container: 'radarMap',
-        style: 'https://tiles.openfreemap.org/styles/liberty',
+        style: styleConfig.url,
         center: [-47.92, -15.78],
-        zoom: 4.5
+        zoom: 4.5,
+        pitch: styleConfig.pitch,
+        bearing: styleConfig.bearing,
+        dragRotate: true
       });
 
-      radarMap.addControl(new maplibregl.NavigationControl(), 'top-right');
+      radarMap.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right');
       radarMap.addControl(new maplibregl.FullscreenControl(), 'top-right');
+
+      radarMap.on('load', () => {
+        if (styleConfig.has3dBuildings) ensure3DBuildings(radarMap);
+      });
+      radarMap.on('styledata', () => {
+        if (styleConfig.has3dBuildings) ensure3DBuildings(radarMap);
+      });
+
+      setupRadarStyleButtons();
     }
 
     async function fetchTrips(isSilent = false) {
@@ -280,7 +403,8 @@
       });
 
       if (!bounds.isEmpty()) {
-        radarMap.fitBounds(bounds, { padding: 60, maxZoom: 12 });
+        const targetPitch = MAP_STYLES[currentMapStyleKey]?.pitch || 0;
+        radarMap.fitBounds(bounds, { padding: 60, maxZoom: 12, pitch: targetPitch });
       }
     }
 

@@ -81,31 +81,151 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 });
 
-// Initialize MapLibre GL with OpenFreeMap (Liberty Style)
-function initOpenFreeMap() {
-  map = new maplibregl.Map({
-    container: 'map',
-    style: 'https://tiles.openfreemap.org/styles/liberty',
-    center: [-46.6333, -23.5505],
-    zoom: 8
+// OpenFreeMap Styles & 3D Configuration
+const MAP_STYLES = {
+  '3d': {
+    id: '3d',
+    label: '🌐 3D',
+    url: 'https://tiles.openfreemap.org/styles/liberty',
+    pitch: 55,
+    bearing: 0,
+    has3dBuildings: true
+  },
+  'dark': {
+    id: 'dark',
+    label: '🌑 Escuro',
+    url: 'https://tiles.openfreemap.org/styles/dark',
+    pitch: 45,
+    bearing: 0,
+    has3dBuildings: true
+  },
+  'liberty': {
+    id: 'liberty',
+    label: '🗺️ Estrada',
+    url: 'https://tiles.openfreemap.org/styles/liberty',
+    pitch: 0,
+    bearing: 0,
+    has3dBuildings: false
+  },
+  'bright': {
+    id: 'bright',
+    label: '☀️ Claro',
+    url: 'https://tiles.openfreemap.org/styles/bright',
+    pitch: 0,
+    bearing: 0,
+    has3dBuildings: false
+  }
+};
+
+let currentMapStyleKey = '3d';
+try {
+  currentMapStyleKey = localStorage.getItem('insanos_map_style') || '3d';
+} catch (e) {}
+
+function ensure3DBuildings(targetMap) {
+  if (!targetMap || !targetMap.getSource('openmaptiles')) return;
+  if (!targetMap.getLayer('building-3d')) {
+    targetMap.addLayer({
+      id: 'building-3d',
+      type: 'fill-extrusion',
+      source: 'openmaptiles',
+      'source-layer': 'building',
+      minzoom: 14,
+      paint: {
+        'fill-extrusion-base': ['get', 'render_min_height'],
+        'fill-extrusion-color': '#444455',
+        'fill-extrusion-height': ['get', 'render_height'],
+        'fill-extrusion-opacity': 0.8
+      }
+    });
+  }
+}
+
+function applyMapStyle(styleKey) {
+  const styleConfig = MAP_STYLES[styleKey] || MAP_STYLES['3d'];
+  currentMapStyleKey = styleConfig.id;
+  try {
+    localStorage.setItem('insanos_map_style', currentMapStyleKey);
+  } catch (e) {}
+
+  document.querySelectorAll('#trackerMapStyleSelector .btn-map-style').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.style === currentMapStyleKey);
   });
 
-  map.addControl(new maplibregl.NavigationControl(), 'top-right');
+  if (!map) return;
+
+  routeSourceAdded = false;
+  plannedRouteKey = '';
+
+  map.setStyle(styleConfig.url);
+
+  map.once('style.load', () => {
+    if (styleConfig.has3dBuildings) {
+      ensure3DBuildings(map);
+    }
+    if (currentTrip) {
+      renderMapElements(currentTrip);
+    }
+  });
+
+  map.easeTo({
+    pitch: styleConfig.pitch,
+    bearing: styleConfig.bearing,
+    duration: 800
+  });
+}
+
+function setupMapStyleButtons() {
+  document.querySelectorAll('#trackerMapStyleSelector .btn-map-style').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.style === currentMapStyleKey);
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      const style = btn.dataset.style;
+      if (style) {
+        applyMapStyle(style);
+      }
+    });
+  });
+}
+
+// Initialize MapLibre GL with OpenFreeMap (3D Style by default)
+function initOpenFreeMap() {
+  const savedStyle = (function() {
+    try { return localStorage.getItem('insanos_map_style') || '3d'; } catch (e) { return '3d'; }
+  })();
+  const styleConfig = MAP_STYLES[savedStyle] || MAP_STYLES['3d'];
+  currentMapStyleKey = styleConfig.id;
+
+  map = new maplibregl.Map({
+    container: 'map',
+    style: styleConfig.url,
+    center: [-46.6333, -23.5505],
+    zoom: 8,
+    pitch: styleConfig.pitch,
+    bearing: styleConfig.bearing,
+    dragRotate: true
+  });
+
+  map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right');
   map.addControl(new maplibregl.FullscreenControl(), 'top-right');
   map.on('error', event => console.warn('Erro no mapa:', event.error || event));
   
   const onReady = () => {
     map.resize();
+    if (styleConfig.has3dBuildings) ensure3DBuildings(map);
     if (currentTrip) renderMapElements(currentTrip);
   };
   map.on('load', onReady);
   map.on('styledata', () => {
     map.resize();
+    if (styleConfig.has3dBuildings) ensure3DBuildings(map);
     if (currentTrip) renderMapElements(currentTrip);
   });
   window.addEventListener('resize', () => {
     if (map) map.resize();
   });
+
+  setupMapStyleButtons();
 
   const btnFitMap = document.getElementById('btnFitMap');
   if (btnFitMap) {
@@ -1101,7 +1221,10 @@ function fitRouteBounds() {
     });
   }
 
-  if (!bounds.isEmpty()) map.fitBounds(bounds, { padding: 60, maxZoom: 14 });
+  if (!bounds.isEmpty()) {
+    const targetPitch = MAP_STYLES[currentMapStyleKey]?.pitch || 0;
+    map.fitBounds(bounds, { padding: 60, maxZoom: 14, pitch: targetPitch });
+  }
 }
 
 function setupEventListeners(tripId) {

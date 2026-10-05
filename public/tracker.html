@@ -90,8 +90,14 @@
               <strong id="statDuration">Calculando...</strong>
             </div>
           </div>
-          <div style="display: flex; gap: 0.5rem;">
-            <button class="nav-btn" id="btnFitMap" style="padding: 0.3rem 0.75rem; font-size: 0.85rem;">
+          <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+            <div class="map-style-selector" id="trackerMapStyleSelector">
+              <button type="button" class="btn-map-style active" data-style="3d" title="Modo 3D com perspectiva e edifícios volumétricos">🌐 3D</button>
+              <button type="button" class="btn-map-style" data-style="dark" title="Tema Escuro Tático Insanos MC">🌑 Escuro</button>
+              <button type="button" class="btn-map-style" data-style="liberty" title="Mapa Rodoviário Completo">🗺️ Estrada</button>
+              <button type="button" class="btn-map-style" data-style="bright" title="Mapa de Alto Contraste Claro">☀️ Claro</button>
+            </div>
+            <button class="nav-btn" id="btnFitMap" style="padding: 0.3rem 0.75rem; font-size: 0.85rem;" title="Centralizar visualização na rota">
               ⛶ Ajustar Rota
             </button>
           </div>
