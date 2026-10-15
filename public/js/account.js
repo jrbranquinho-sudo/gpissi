@@ -24,13 +24,19 @@ function showMessage(message, isError = false) {
   accountMessage.style.color = isError ? '#ff5252' : 'var(--accent-green)';
 }
 
-async function sendJson(url, data) {
+async function sendJson(url, data, method = 'POST') {
   const response = await fetch(url, {
-    method: 'POST',
+    method,
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data)
   });
-  const result = await response.json();
+  const contentType = response.headers.get('content-type') || '';
+  let result;
+  if (contentType.includes('application/json')) {
+    result = await response.json();
+  } else {
+    throw new Error('Servidor retornou resposta inválida.');
+  }
   if (!response.ok) {
     const error = new Error(result.error || 'Não foi possível concluir a solicitação.');
     error.payload = result;
@@ -308,11 +314,17 @@ function renderVehicles(vehicles = []) {
     return;
   }
   vehicles.forEach(vehicle => {
-    const row = document.createElement('div');
-    row.className = 'account-vehicle-item';
-    const description = document.createElement('span');
+    const card = document.createElement('div');
+    card.className = 'account-card-item';
+
+    const info = document.createElement('div');
+    info.className = 'account-card-text';
     const parts = [vehicle.tipo, vehicle.placa, vehicle.marca, vehicle.modelo, vehicle.detalhes].filter(Boolean);
-    description.textContent = parts.join(' · ');
+    info.textContent = parts.join(' · ');
+
+    const actions = document.createElement('div');
+    actions.className = 'account-card-actions';
+
     const remove = document.createElement('button');
     remove.type = 'button';
     remove.className = 'btn-secondary account-vehicle-delete';
@@ -323,8 +335,10 @@ function renderVehicles(vehicles = []) {
       const result = await response.json();
       if (response.ok) renderVehicles(result.vehicles);
     });
-    row.append(description, remove);
-    container.append(row);
+
+    actions.append(remove);
+    card.append(info, actions);
+    container.append(card);
   });
 }
 
@@ -374,21 +388,28 @@ fetch('/api/auth/me').then(async response => {
   }
   tripsList.replaceChildren(...trips.map(trip => {
     const item = document.createElement('div');
-    item.style.cssText = 'display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem; padding: 0.4rem; background: var(--bg-secondary); border-radius: 4px;';
+    item.className = 'account-card-item';
+
+    const info = document.createElement('div');
+    info.className = 'account-card-text';
+
     const link = document.createElement('a');
     link.href = `/tracker?id=${encodeURIComponent(trip.id)}&share=${encodeURIComponent(trip.share_token)}`;
     link.textContent = `${trip.origem} → ${trip.destino} | ${trip.status} | ${trip.data_saida}`;
-    link.style.flex = '1';
+    link.className = 'account-trip-title';
+    info.append(link);
+
+    const actions = document.createElement('div');
+    actions.className = 'account-card-actions';
+
     const returnBtn = document.createElement('a');
     returnBtn.href = `/novo?retorno_de=${encodeURIComponent(trip.id)}`;
-    returnBtn.className = 'btn-secondary';
-    returnBtn.style.cssText = 'padding: 0.25rem 0.6rem; font-size: 0.8rem; color: #ff9933; border-color: rgba(255, 102, 0, 0.4); margin-left: 0.5rem; text-decoration: none; display: inline-flex; align-items: center;';
+    returnBtn.className = 'btn-secondary account-trip-btn-return';
     returnBtn.textContent = '🔄 Retorno';
 
     const delBtn = document.createElement('button');
     delBtn.type = 'button';
-    delBtn.className = 'btn-secondary';
-    delBtn.style.cssText = 'padding: 0.25rem 0.6rem; font-size: 0.8rem; color: #ef4444; border-color: rgba(239, 68, 68, 0.4); margin-left: 0.5rem;';
+    delBtn.className = 'btn-secondary account-trip-btn-del';
     delBtn.textContent = 'Apagar';
     delBtn.addEventListener('click', async (e) => {
       e.preventDefault();
@@ -404,7 +425,9 @@ fetch('/api/auth/me').then(async response => {
         alert(err.error || 'Não foi possível apagar a viagem.');
       }
     });
-    item.append(link, returnBtn, delBtn);
+
+    actions.append(returnBtn, delBtn);
+    item.append(info, actions);
     return item;
   }));
 }).catch(() => {});

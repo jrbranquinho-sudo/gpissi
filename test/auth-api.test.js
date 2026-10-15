@@ -139,7 +139,15 @@ test('cadastro e login mostram desafio visual e renovam sequência incorreta', a
   assert.equal(session.status, 200);
   const sessionData = await session.json();
   assert.equal(sessionData.user.profile.telefone, '(11) 9 9999-9999');
-  assert.equal(sessionData.user.profile.funcao_grau, 'FULL - VIII');
+  const updateDivPost = await postJson('/api/account/divisao', { divisao: 'Divisão Pires do Rio' }, { cookie });
+  assert.equal(updateDivPost.response.status, 200);
+  assert.equal(updateDivPost.body.profile.divisao, 'Divisão Pires do Rio');
+  assert.equal(updateDivPost.body.profile.regional, 'REGIONAL GOIÁS I - GO');
+  assert.equal(updateDivPost.body.profile.comando, 'Comando Regional XLVIII');
+
+  const updateDivPut = await putJson('/api/account/divisao', { divisao: 'Divisão Catalão Centro' }, cookie);
+  assert.equal(updateDivPut.response.status, 200);
+  assert.equal(updateDivPut.body.profile.divisao, 'Divisão Catalão Centro');
 
   const invalidCompanions = await putJson('/api/account/companions', {
     companions: Array.from({ length: 5 }, (_, index) => ({ nome: `Contato ${index}`, telefone: '11999999999' }))

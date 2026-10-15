@@ -608,6 +608,13 @@ function updateExternalMapLinks(trip) {
 }
 
 function updateCreatorPanelUI(trip) {
+  const creatorPanel = document.getElementById('creatorPanel');
+  if (trip.status === 'CONCLUÍDA' || trip.status === 'CANCELADA') {
+    if (creatorPanel) creatorPanel.style.display = 'none';
+    return;
+  }
+  if (creatorPanel) creatorPanel.style.display = 'block';
+
   const authMsg = document.getElementById('creatorAuthMessage');
   const activeActions = document.getElementById('creatorActiveActions');
   const authPrompt = document.getElementById('creatorAuthPrompt');
@@ -623,28 +630,9 @@ function updateCreatorPanelUI(trip) {
 
   const pilotCard = document.getElementById('pilotActivationCard');
 
-  if (trip.status === 'CONCLUÍDA') {
-    if (pilotCard) pilotCard.style.display = 'none';
-    if (activeActions) activeActions.style.display = 'none';
-    if (authPrompt) authPrompt.style.display = 'none';
-    if (gpsStatusBox) gpsStatusBox.style.display = 'none';
-    if (authMsg) authMsg.innerHTML = '<span style="color: var(--accent-green); font-weight: bold;">✓ Este protocolo de viagem já foi encerrado pelo autor.</span>';
-    // Allow creator to delete even if closed
-    if (isCreatorAuth && btnDeleteTrip) {
-      if (activeActions) activeActions.style.display = 'flex';
-      btnDeleteTrip.style.display = 'flex';
-      const btnTransmitGps = document.getElementById('btnTransmitGps');
-      const btnCloseTrip = document.getElementById('btnCloseTrip');
-      if (btnTransmitGps) btnTransmitGps.style.display = 'none';
-      if (btnEditTrip) btnEditTrip.style.display = 'none';
-      if (btnCloseTrip) btnCloseTrip.style.display = 'none';
-    }
-    return;
-  }
-
   if (isCreatorAuth) {
     if (pilotCard) pilotCard.style.display = 'none';
-    if (authMsg) authMsg.innerHTML = '<strong>👑 Autenticado como Piloto:</strong> Você registrou este protocolo. O rastreamento atualiza seu trajeto e pontos de passagem a cada 5 segundos ou ao registrar sinal de internet:';
+    if (authMsg) authMsg.innerHTML = '<strong>👑 Autenticado como Integrante:</strong> Você registrou este protocolo. O rastreamento atualiza seu trajeto e pontos de passagem a cada 5 segundos ou ao registrar sinal de internet:';
     if (activeActions) activeActions.style.display = 'flex';
     if (authPrompt) authPrompt.style.display = 'none';
     if (gpsStatusBox) gpsStatusBox.style.display = 'block';

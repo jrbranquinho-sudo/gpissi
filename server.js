@@ -573,7 +573,7 @@ app.get('/api/divisoes', (req, res) => {
 });
 
 // Atualização de Divisão cadastral para usuários existentes
-app.put('/api/account/divisao', requireAccount, async (req, res) => {
+const handleUpdateDivisao = async (req, res) => {
   const rawDiv = sanitizeString(req.body.divisao || '', 100);
   if (!rawDiv || !rawDiv.trim()) {
     return res.status(400).json({ error: 'Informe a sua Divisão do Insanos MC.' });
@@ -586,7 +586,9 @@ app.put('/api/account/divisao', requireAccount, async (req, res) => {
   };
   const updatedProfile = await storage.updateUserProfile(req.user.id, updates);
   res.json({ success: true, profile: updatedProfile, user: updatedProfile, division: matched });
-});
+};
+app.put('/api/account/divisao', requireAccount, handleUpdateDivisao);
+app.post('/api/account/divisao', requireAccount, handleUpdateDivisao);
 
 app.get('/api/members', requireAccount, async (req, res) => {
   const members = await storage.listMembers();

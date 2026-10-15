@@ -21,10 +21,16 @@ test('ônibus usa média de 80 km/h', () => {
   });
 });
 
-test('adiciona 20 minutos apenas acima de 220 km', () => {
+test('adiciona 25 minutos quando a duração calculada excede 2 horas', () => {
+  // Moto a 110 km/h: 220 km = 2h exatas (sem parada adicional)
   assert.equal(estimateDurationSeconds(220, 'MOTO').stopMinutes, 0);
-  assert.equal(estimateDurationSeconds(221, 'MOTO').durationSeconds, (221 / 110) * 3600 + 1200);
-  assert.equal(estimateDurationSeconds(221, 'ÔNIBUS').stopMinutes, 20);
+  // Moto a 110 km/h: 221 km = 2h 0m 32s > 2h (adiciona 25 minutos = 1500 segundos)
+  assert.equal(estimateDurationSeconds(221, 'MOTO').durationSeconds, (221 / 110) * 3600 + 1500);
+  assert.equal(estimateDurationSeconds(221, 'MOTO').stopMinutes, 25);
+  // Ônibus a 80 km/h: 160 km = 2h exatas (0 min de parada)
+  assert.equal(estimateDurationSeconds(160, 'ÔNIBUS').stopMinutes, 0);
+  // Ônibus a 80 km/h: 161 km > 2h (25 min de parada)
+  assert.equal(estimateDurationSeconds(161, 'ÔNIBUS').stopMinutes, 25);
 });
 
 test('sequência visual tem seis letras e valida somente seu HMAC', () => {
