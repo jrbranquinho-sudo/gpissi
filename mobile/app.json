@@ -1,0 +1,48 @@
+{
+  "expo": {
+    "name": "GPISSI - Insanos MC",
+    "slug": "gpissi-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/caveira.png",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#0a0d14",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.insanosmc.gpissi",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "O GPISSI utiliza o GPS para telemetria de rota em tempo real e monitoramento de segurança do motociclista.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "O GPISSI rastreia a sua rota na estrada para garantir a segurança da divisão e registrar paradas de apoio.",
+        "UIBackgroundModes": ["location"]
+      }
+    },
+    "android": {
+      "package": "com.insanosmc.gpissi",
+      "adaptiveIcon": {
+        "backgroundColor": "#0a0d14",
+        "foregroundImage": "./assets/caveira.png"
+      },
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "POST_NOTIFICATIONS",
+        "VIBRATE"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Permita que o GPISSI acompanhe sua rota na estrada em segundo plano para envio de telemetria aos irmãos do clube."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/caveira.png",
+          "color": "#ff6600"
+        }
+      ]
+    ]
+  }
+}

@@ -483,7 +483,9 @@ app.post('/api/auth/register', accountLimiter, async (req, res) => {
   try {
     const email = sanitizeString(req.body.email, 254).toLowerCase();
     const password = String(req.body.password || '');
-    const rawDivisao = sanitizeString(req.body.divisao || '', 100);
+    const rawDivisao = sanitizeString(req.body.divisao || '', 120);
+    const rawRegional = sanitizeString(req.body.regional || '', 120);
+    const rawComando = sanitizeString(req.body.comando || '', 120);
     const matchedDiv = divisoes.matchDivision(rawDivisao);
 
     const profile = {
@@ -491,9 +493,9 @@ app.post('/api/auth/register', accountLimiter, async (req, res) => {
       nome_colete: sanitizeString(req.body.nome_colete, 80),
       telefone: String(req.body.telefone || '').replace(/\D/g, '').slice(0, 11),
       funcao_grau: sanitizeString(req.body.funcao_grau, 100),
-      divisao: matchedDiv ? matchedDiv.divisao : (rawDivisao || ''),
-      regional: matchedDiv ? matchedDiv.regional : '',
-      comando: matchedDiv ? matchedDiv.comando : '',
+      divisao: rawDivisao || (matchedDiv ? matchedDiv.divisao : ''),
+      regional: rawRegional || (matchedDiv ? matchedDiv.regional : ''),
+      comando: rawComando || (matchedDiv ? matchedDiv.comando : ''),
       acompanhantes: []
     };
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || password.length < 12 || !profile.nome || !profile.nome_colete || profile.telefone.length !== 11 || !profile.funcao_grau) {
@@ -564,6 +566,18 @@ app.post('/api/auth/logout', (req, res) => {
   res.json({ success: true });
 });
 
+// Endpoint da estrutura completa hierárquica (Comandos -> Regionais -> Divisões)
+app.get('/api/public/estrutura', async (req, res) => {
+  try {
+    const force = req.query.refresh === 'true';
+    const tree = await divisoes.getStructureTree(force);
+    res.json({ success: true, data: tree });
+  } catch (err) {
+    console.error('Erro ao consultar estrutura de divisões:', err.message);
+    res.status(500).json({ error: 'Não foi possível carregar a estrutura de divisões.', details: err.message });
+  }
+});
+
 // Endpoint de busca de Divisões do Insanos MC (com Regional e Comando aninhados)
 app.get('/api/divisoes', (req, res) => {
   const q = req.query.q || '';
@@ -574,18 +588,20 @@ app.get('/api/divisoes', (req, res) => {
 
 // Atualização de Divisão cadastral para usuários existentes
 const handleUpdateDivisao = async (req, res) => {
-  const rawDiv = sanitizeString(req.body.divisao || '', 100);
+  const rawDiv = sanitizeString(req.body.divisao || '', 120);
+  const rawReg = sanitizeString(req.body.regional || '', 120);
+  const rawCmd = sanitizeString(req.body.comando || '', 120);
   if (!rawDiv || !rawDiv.trim()) {
     return res.status(400).json({ error: 'Informe a sua Divisão do Insanos MC.' });
   }
   const matched = divisoes.matchDivision(rawDiv);
   const updates = {
-    divisao: matched ? matched.divisao : rawDiv,
-    regional: matched ? matched.regional : '',
-    comando: matched ? matched.comando : ''
+    divisao: rawDiv || (matched ? matched.divisao : rawDiv),
+    regional: rawReg || (matched ? matched.regional : ''),
+    comando: rawCmd || (matched ? matched.comando : '')
   };
   const updatedProfile = await storage.updateUserProfile(req.user.id, updates);
-  res.json({ success: true, profile: updatedProfile, user: updatedProfile, division: matched });
+  res.json({ success: true, profile: updatedProfile, user: updatedProfile, division: matched || updates });
 };
 app.put('/api/account/divisao', requireAccount, handleUpdateDivisao);
 app.post('/api/account/divisao', requireAccount, handleUpdateDivisao);

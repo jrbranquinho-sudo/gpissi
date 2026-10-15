@@ -1,7 +1,14 @@
 const fs = require('fs');
 const path = require('path');
 
+const ESTRUTURA_API_URL = process.env.ESTRUTURA_API_URL || 'https://issi-expansao.duckdns.org/api/public/estrutura?pais_id=BR';
+const CACHE_FILE = path.join(__dirname, 'data', 'divisoes_cache.json');
+const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutos
+
 let divisionsList = [];
+let cachedTree = null;
+let lastFetchedTime = 0;
+let isFetching = false;
 
 const BRAZILIAN_UFS = 'ac|al|ap|am|ba|ce|df|es|go|ma|mt|ms|mg|pa|pb|pr|pe|pi|rj|rn|rs|ro|rr|sc|sp|se|to';
 const UF_END_REGEX = new RegExp(`\\s+(${BRAZILIAN_UFS})\\d?$`, 'i');
@@ -25,75 +32,184 @@ function stripDivisionPrefix(str) {
     .trim();
 }
 
+function toTitleCasePt(str) {
+  if (!str) return '';
+  const minor = new Set(['de', 'da', 'do', 'dos', 'das', 'e', 'em', 'no', 'na', 'nos', 'nas']);
+  return str.toLowerCase().split(' ').map((w, idx) => {
+    if (idx > 0 && minor.has(w)) return w;
+    return w.charAt(0).toUpperCase() + w.slice(1);
+  }).join(' ');
+}
+
+function formatComandoName(str) {
+  if (!str) return '';
+  return str.split(' ').map(w => {
+    if (/^[ivxlcdm]+$/i.test(w)) {
+      return w.toUpperCase();
+    }
+    return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
+  }).join(' ');
+}
+
+function processStructureTree(data) {
+  const list = [];
+  const seen = new Set();
+  if (!Array.isArray(data)) return list;
+
+  for (const cmd of data) {
+    const rawCmdName = cmd.nome || cmd.label || '';
+    const comando = formatComandoName(rawCmdName);
+    const regionais = cmd.regionais || [];
+    for (const reg of regionais) {
+      const regional = reg.nome || reg.label || '';
+      const uf = reg.uf || '';
+      const divisoes = reg.divisoes || [];
+      for (const div of divisoes) {
+        const rawDiv = div.nome || div.label || '';
+        if (!rawDiv) continue;
+
+        const key = comando + '|' + regional + '|' + rawDiv;
+        if (seen.has(key)) continue;
+        seen.add(key);
+
+        const cleanName = rawDiv.replace(/^divis[aã]o\s+/i, '').trim();
+        const baseName = cleanName.replace(/\s*-\s*[A-Z0-9]+.*$/i, '').replace(/\(.*\)$/, '').trim();
+        const canonical = 'Divisão ' + toTitleCasePt(baseName || cleanName);
+
+        list.push({
+          id: div.id,
+          comando,
+          regional,
+          divisao_completa: rawDiv,
+          divisao: canonical,
+          base_name: baseName,
+          uf,
+          key_exact: cleanString(rawDiv),
+          key_canonical: cleanString(canonical),
+          key_stripped: stripDivisionPrefix(baseName || cleanName)
+        });
+      }
+    }
+  }
+
+  list.sort((a, b) => a.divisao.localeCompare(b.divisao, 'pt-BR'));
+  return list;
+}
+
+/**
+ * Atualiza os dados a partir da API externa do ISSI
+ */
+async function fetchStructureAsync(force = false) {
+  if (isFetching) return cachedTree;
+  const now = Date.now();
+  if (!force && cachedTree && (now - lastFetchedTime < CACHE_TTL_MS)) {
+    return cachedTree;
+  }
+
+  isFetching = true;
+  try {
+    const res = await fetch(ESTRUTURA_API_URL, {
+      headers: { 'Accept': 'application/json' },
+      signal: AbortSignal.timeout(10000)
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const json = await res.json();
+    const tree = json.data || json;
+    if (Array.isArray(tree) && tree.length > 0) {
+      cachedTree = tree;
+      divisionsList = processStructureTree(tree);
+      lastFetchedTime = Date.now();
+
+      // Salva cópia de segurança em disco para fallback de emergência caso a API caia
+      try {
+        if (!fs.existsSync(path.dirname(CACHE_FILE))) {
+          fs.mkdirSync(path.dirname(CACHE_FILE), { recursive: true });
+        }
+        fs.writeFileSync(CACHE_FILE, JSON.stringify(tree), 'utf8');
+      } catch (_) {}
+
+      return cachedTree;
+    }
+  } catch (err) {
+    console.warn('[divisoes.js] Falha ao consultar API externa:', err.message);
+  } finally {
+    isFetching = false;
+  }
+
+  // Fallback para cache de emergência em disco se memória estiver vazia
+  if (!cachedTree) {
+    try {
+      if (fs.existsSync(CACHE_FILE)) {
+        const raw = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8'));
+        cachedTree = raw;
+        divisionsList = processStructureTree(raw);
+      }
+    } catch (_) {}
+  }
+
+  return cachedTree;
+}
+
 function loadDivisions() {
   if (divisionsList.length > 0) return divisionsList;
 
-  const dataPath = path.join(__dirname, 'data', 'divisoes_data.json');
-  if (fs.existsSync(dataPath)) {
+  // 1. Tenta carregar do cache de emergência em disco se existir
+  if (fs.existsSync(CACHE_FILE)) {
     try {
-      const raw = JSON.parse(fs.readFileSync(dataPath, 'utf8'));
+      const raw = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8'));
+      cachedTree = raw;
+      divisionsList = processStructureTree(raw);
+      lastFetchedTime = Date.now();
+      // Dispara atualização em background
+      fetchStructureAsync(true).catch(() => {});
+      return divisionsList;
+    } catch (_) {}
+  }
+
+  // 2. Tenta curl síncrono rápido (útil durante inicialização rápida ou testes)
+  try {
+    const { execSync } = require('child_process');
+    const res = execSync(`curl -s --max-time 6 "${ESTRUTURA_API_URL}"`, {
+      encoding: 'utf8',
+      maxBuffer: 10 * 1024 * 1024
+    });
+    const json = JSON.parse(res);
+    const tree = json.data || json;
+    if (Array.isArray(tree) && tree.length > 0) {
+      cachedTree = tree;
+      divisionsList = processStructureTree(tree);
+      lastFetchedTime = Date.now();
+      try {
+        fs.writeFileSync(CACHE_FILE, JSON.stringify(tree), 'utf8');
+      } catch (_) {}
+      return divisionsList;
+    }
+  } catch (_) {}
+
+  // 3. Fallback legado data/divisoes_data.json se existir
+  const legacyDataPath = path.join(__dirname, 'data', 'divisoes_data.json');
+  if (fs.existsSync(legacyDataPath)) {
+    try {
+      const raw = JSON.parse(fs.readFileSync(legacyDataPath, 'utf8'));
       divisionsList = raw.map(d => ({
         ...d,
         key_exact: cleanString(d.divisao_completa),
         key_canonical: cleanString(d.divisao),
         key_stripped: stripDivisionPrefix(d.base_name || d.divisao)
       }));
-      // Ordena alfabeticamente por padrão de A a Z
       divisionsList.sort((a, b) => a.divisao.localeCompare(b.divisao, 'pt-BR'));
       return divisionsList;
-    } catch (e) {
-      console.warn('Erro ao carregar data/divisoes_data.json:', e.message);
-    }
-  }
-
-  // Fallback to xlsx if json not found
-  const xlsxPath = path.join(__dirname, 'test', 'divisoes_regionais_comandos.xlsx');
-  if (fs.existsSync(xlsxPath)) {
-    try {
-      const XLSX = require('xlsx');
-      const wb = XLSX.readFile(xlsxPath);
-      const list = [];
-      const seen = new Set();
-      wb.SheetNames.filter(s => s.startsWith('CMD ') || s === 'I.S.S.I').forEach(sheetName => {
-        const s = wb.Sheets[sheetName];
-        const data = XLSX.utils.sheet_to_json(s, { header: 1 });
-        let comando = (data[1] && data[1][0]) ? data[1][0].toString().trim() : sheetName;
-        for (let i = 2; i < data.length; i++) {
-          const row = data[i];
-          if (!row || !row[0]) continue;
-          const regional = row[0].toString().trim();
-          const rawDiv = row[1] ? row[1].toString().trim() : '';
-          if (rawDiv && rawDiv.toLowerCase().startsWith('divis')) {
-            const key = comando + '|' + regional + '|' + rawDiv;
-            if (!seen.has(key)) {
-              seen.add(key);
-              const cleanName = rawDiv.replace(/^divis[aã]o\s+/i, '').trim();
-              const ufMatch = cleanName.match(/-\s*([A-Z]{2}\d?)/i);
-              const uf = ufMatch ? ufMatch[1].toUpperCase() : '';
-              const baseName = cleanName.replace(/\s*-\s*[A-Z]{2}\d?.*$/i, '').replace(/\(.*\)$/, '').trim();
-              list.push({
-                comando,
-                regional,
-                divisao_completa: rawDiv,
-                divisao: 'Divisão ' + baseName,
-                base_name: baseName,
-                uf,
-                key_exact: cleanString(rawDiv),
-                key_canonical: cleanString('Divisão ' + baseName),
-                key_stripped: stripDivisionPrefix(baseName)
-              });
-            }
-          }
-        }
-      });
-      list.sort((a, b) => a.divisao.localeCompare(b.divisao, 'pt-BR'));
-      divisionsList = list;
-    } catch (err) {
-      console.warn('Erro ao carregar planilha de divisões:', err.message);
-    }
+    } catch (_) {}
   }
 
   return divisionsList;
+}
+
+async function getStructureTree(force = false) {
+  if (force || !cachedTree || (Date.now() - lastFetchedTime >= CACHE_TTL_MS)) {
+    await fetchStructureAsync(force);
+  }
+  return cachedTree || [];
 }
 
 function matchDivision(input) {
@@ -200,10 +316,16 @@ function searchDivisions(query, limit = 0) {
   return limit > 0 ? results.slice(0, limit) : results;
 }
 
+// Dispara busca inicial assíncrona para aquecer o cache
+fetchStructureAsync().catch(() => {});
+
 module.exports = {
   loadDivisions,
   matchDivision,
   searchDivisions,
   cleanString,
-  stripDivisionPrefix
+  stripDivisionPrefix,
+  getStructureTree,
+  fetchStructureAsync,
+  formatComandoName
 };

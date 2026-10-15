@@ -13,4 +13,5 @@ test_verify.js
 Thumbs.db
 *.zip
 
+data/*_cache.json
 .vercel

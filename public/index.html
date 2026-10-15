@@ -373,12 +373,21 @@
           </div>
         </div>
         <div style="display: flex; flex-direction: column; gap: 0.5rem; flex: 1; min-width: 280px; max-width: 480px; width: 100%;">
-          <div class="dash-divisao-input-group">
-            <input type="text" id="dashInputDivisao" list="dashDivisoesList" class="form-control" placeholder="Ex: Divisão Pires do Rio..." style="flex: 1; padding: 0.65rem 0.9rem; font-size: 0.9rem; background: var(--bg-secondary); border: 1px solid var(--border-subtle); color: #fff; border-radius: var(--radius-sm);">
-            <datalist id="dashDivisoesList"></datalist>
-            <button type="button" id="btnSalvarDivisaoDash" onclick="salvarDivisaoDashboard()" class="btn-primary-insano dash-divisao-btn-salvar" style="padding: 0.65rem 1.2rem; font-size: 0.88rem; white-space: nowrap; cursor: pointer;">
-              SALVAR
-            </button>
+          <div class="dash-divisao-input-group" style="display: flex; flex-direction: column; gap: 0.5rem; width: 100%;">
+            <select id="dashSelectComando" class="form-control" style="padding: 0.55rem 0.85rem; font-size: 0.88rem; background: var(--bg-secondary); border: 1px solid var(--border-subtle); color: #fff; border-radius: var(--radius-sm);">
+              <option value="">1. Selecione o Comando...</option>
+            </select>
+            <select id="dashSelectRegional" class="form-control" disabled style="padding: 0.55rem 0.85rem; font-size: 0.88rem; background: var(--bg-secondary); border: 1px solid var(--border-subtle); color: #fff; border-radius: var(--radius-sm);">
+              <option value="">2. Selecione a Regional...</option>
+            </select>
+            <div style="display: flex; gap: 0.5rem;">
+              <select id="dashSelectDivisao" class="form-control" disabled style="flex: 1; padding: 0.55rem 0.85rem; font-size: 0.88rem; background: var(--bg-secondary); border: 1px solid var(--border-subtle); color: #fff; border-radius: var(--radius-sm);">
+                <option value="">3. Selecione a Divisão...</option>
+              </select>
+              <button type="button" id="btnSalvarDivisaoDash" onclick="salvarDivisaoDashboard()" class="btn-primary-insano dash-divisao-btn-salvar" style="padding: 0.55rem 1.2rem; font-size: 0.88rem; white-space: nowrap; cursor: pointer;">
+                SALVAR
+              </button>
+            </div>
           </div>
           <div id="dashDivisaoFeedback" style="display: none; font-size: 0.82rem; font-weight: 600;"></div>
         </div>
@@ -1106,38 +1115,98 @@
       datalistEl.innerHTML = scored.map(s => `<option value="${s.item.divisao}">${s.item.regional} (${s.item.comando})</option>`).join('');
     }
 
-    async function loadDivisoesOptions() {
-      const datalist = document.getElementById('dashDivisoesList');
-      const input = document.getElementById('dashInputDivisao');
-      if (!datalist) return;
-      try {
-        if (allDivisoesCache.length === 0) {
-          const res = await fetch('/api/divisoes');
-          if (!res.ok) return;
-          allDivisoesCache = await res.json();
-        }
-        renderDivisoesDatalist(datalist, allDivisoesCache, '');
+    let dashEstruturaCache = null;
 
-        if (input && !input.dataset.smartSearchAttached) {
-          input.dataset.smartSearchAttached = 'true';
-          input.addEventListener('input', () => {
-            renderDivisoesDatalist(datalist, allDivisoesCache, input.value);
-          });
+    async function loadDivisoesOptions() {
+      const selectCmd = document.getElementById('dashSelectComando');
+      const selectReg = document.getElementById('dashSelectRegional');
+      const selectDiv = document.getElementById('dashSelectDivisao');
+      if (!selectCmd || !selectReg || !selectDiv) return;
+
+      try {
+        if (!dashEstruturaCache || dashEstruturaCache.length === 0) {
+          const res = await fetch('https://issi-expansao.duckdns.org/api/public/estrutura?pais_id=BR').catch(() => fetch('/api/public/estrutura'));
+          const json = await res.json();
+          dashEstruturaCache = json.data || json || [];
         }
-      } catch (e) {
-        console.error('Erro ao carregar lista de divisões:', e);
+
+        selectCmd.innerHTML = '<option value="">1. Selecione o Comando...</option>';
+        dashEstruturaCache.forEach(cmd => {
+          const opt = document.createElement('option');
+          opt.value = cmd.label || cmd.nome;
+          opt.textContent = cmd.label || cmd.nome;
+          selectCmd.appendChild(opt);
+        });
+
+        selectCmd.onchange = () => {
+          const cmdNome = selectCmd.value;
+          selectReg.innerHTML = '<option value="">2. Selecione a Regional...</option>';
+          selectDiv.innerHTML = '<option value="">3. Selecione a regional primeiro...</option>';
+          selectDiv.disabled = true;
+
+          if (!cmdNome) {
+            selectReg.disabled = true;
+            return;
+          }
+          const cmdObj = dashEstruturaCache.find(c => (c.label === cmdNome || c.nome === cmdNome));
+          if (cmdObj && Array.isArray(cmdObj.regionais) && cmdObj.regionais.length > 0) {
+            cmdObj.regionais.forEach(r => {
+              const opt = document.createElement('option');
+              opt.value = r.label || r.nome;
+              opt.textContent = r.label || r.nome;
+              selectReg.appendChild(opt);
+            });
+            selectReg.disabled = false;
+          } else {
+            selectReg.innerHTML = '<option value="">Nenhuma regional encontrada</option>';
+            selectReg.disabled = true;
+          }
+        };
+
+        selectReg.onchange = () => {
+          const cmdNome = selectCmd.value;
+          const regNome = selectReg.value;
+          selectDiv.innerHTML = '<option value="">3. Selecione a Divisão...</option>';
+
+          if (!regNome) {
+            selectDiv.disabled = true;
+            return;
+          }
+          const cmdObj = dashEstruturaCache.find(c => (c.label === cmdNome || c.nome === cmdNome));
+          const regObj = cmdObj?.regionais?.find(r => (r.label === regNome || r.nome === regNome));
+          if (regObj && Array.isArray(regObj.divisoes) && regObj.divisoes.length > 0) {
+            regObj.divisoes.forEach(d => {
+              const opt = document.createElement('option');
+              opt.value = d.label || d.nome;
+              opt.textContent = d.label || d.nome;
+              selectDiv.appendChild(opt);
+            });
+            selectDiv.disabled = false;
+          } else {
+            selectDiv.innerHTML = '<option value="">Nenhuma divisão encontrada</option>';
+            selectDiv.disabled = true;
+          }
+        };
+      } catch (err) {
+        console.error('Erro ao carregar estrutura no dashboard:', err);
       }
     }
 
     async function salvarDivisaoDashboard() {
-      const input = document.getElementById('dashInputDivisao');
+      const selectCmd = document.getElementById('dashSelectComando');
+      const selectReg = document.getElementById('dashSelectRegional');
+      const selectDiv = document.getElementById('dashSelectDivisao');
       const feedback = document.getElementById('dashDivisaoFeedback');
       const btn = document.getElementById('btnSalvarDivisaoDash');
-      const val = input.value.trim();
-      if (!val) {
+
+      const comando = (selectCmd?.value || '').trim();
+      const regional = (selectReg?.value || '').trim();
+      const divisao = (selectDiv?.value || '').trim();
+
+      if (!divisao) {
         feedback.style.display = 'block';
         feedback.style.color = '#ef4444';
-        feedback.textContent = 'Por favor, informe sua Divisão.';
+        feedback.textContent = 'Por favor, selecione o Comando, a Regional e a sua Divisão.';
         return;
       }
       btn.disabled = true;
@@ -1146,14 +1215,14 @@
         const res = await fetch('/api/account/divisao', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ divisao: val })
+          body: JSON.stringify({ divisao, regional, comando })
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Erro ao salvar divisão');
         const userProfile = data.profile || data.user || {};
         feedback.style.display = 'block';
         feedback.style.color = 'var(--accent-green)';
-        feedback.innerHTML = `✓ Cadastro atualizado: <strong>${userProfile.divisao || val}</strong> (${userProfile.regional || ''} &bull; ${userProfile.comando || ''})`;
+        feedback.innerHTML = `✓ Cadastro atualizado: <strong>${userProfile.divisao || divisao}</strong> (${userProfile.regional || ''} &bull; ${userProfile.comando || ''})`;
         setTimeout(() => {
           const banner = document.getElementById('missingDivisaoBanner');
           if (banner) banner.style.display = 'none';

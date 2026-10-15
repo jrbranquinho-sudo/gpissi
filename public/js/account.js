@@ -366,6 +366,19 @@ fetch('/api/auth/me').then(async response => {
     }
     if (alertEl) alertEl.style.display = 'block';
   }
+
+  // Inicializa os selects encadeados de Comando, Regional e Divisão no perfil
+  configurarDropdownsEstrutura(
+    document.getElementById('accountComandoSelect'),
+    document.getElementById('accountRegionalSelect'),
+    document.getElementById('accountDivisaoSelect'),
+    {
+      comando: profile.comando,
+      regional: profile.regional,
+      divisao: profile.divisao
+    }
+  );
+
   const companionsResponse = await fetch('/api/account/companions');
   const companions = await companionsResponse.json();
   renderCompanionInputs(companionsResponse.ok ? companions : []);
@@ -432,96 +445,172 @@ fetch('/api/auth/me').then(async response => {
   }));
 }).catch(() => {});
 
-function cleanStrClient(str) {
-  return (str || '')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+// Integração com a API de Estrutura do ISSI (Comandos -> Regionais -> Divisões)
+const ESTRUTURA_API_URL = 'https://issi-expansao.duckdns.org/api/public/estrutura?pais_id=BR';
+let cachedEstruturaData = null;
+
+async function obterEstrutura() {
+  if (cachedEstruturaData && Array.isArray(cachedEstruturaData) && cachedEstruturaData.length > 0) {
+    return cachedEstruturaData;
+  }
+  try {
+    const res = await fetch(ESTRUTURA_API_URL);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const json = await res.json();
+    cachedEstruturaData = json.data || json;
+    return cachedEstruturaData;
+  } catch (err) {
+    console.warn('Tentando fallback para /api/public/estrutura:', err.message);
+    try {
+      const localRes = await fetch('/api/public/estrutura');
+      const localJson = await localRes.json();
+      cachedEstruturaData = localJson.data || localJson;
+      return cachedEstruturaData;
+    } catch (localErr) {
+      console.error('Erro ao carregar estrutura:', localErr);
+      return [];
+    }
+  }
 }
 
-function filterAndRenderDatalist(dList, allDivs, query) {
-  if (!dList || !Array.isArray(allDivs)) return;
-  if (!query || !query.trim()) {
-    dList.replaceChildren(...allDivs.map(d => {
+function configurarDropdownsEstrutura(selectComando, selectRegional, selectDivisao, preSelected = {}) {
+  if (!selectComando || !selectRegional || !selectDivisao) return;
+
+  function preencherRegionais(cmdObj, selectedRegNome = '', selectedDivNome = '') {
+    selectRegional.innerHTML = '<option value="">Selecione uma Regional</option>';
+    selectDivisao.innerHTML = '<option value="">Selecione uma regional primeiro</option>';
+    selectDivisao.disabled = true;
+
+    if (!cmdObj || !Array.isArray(cmdObj.regionais) || cmdObj.regionais.length === 0) {
+      selectRegional.disabled = true;
+      selectRegional.innerHTML = '<option value="">Nenhuma regional encontrada</option>';
+      return;
+    }
+
+    cmdObj.regionais.forEach(reg => {
       const opt = document.createElement('option');
-      opt.value = d.divisao;
-      opt.label = `${d.regional || ''} - ${d.comando || ''}`;
-      return opt;
-    }));
-    return;
-  }
+      const nome = reg.label || reg.nome;
+      opt.value = nome;
+      opt.textContent = nome;
+      opt.dataset.id = reg.id;
+      if (selectedRegNome && (reg.nome === selectedRegNome || reg.label === selectedRegNome || nome.toLowerCase() === selectedRegNome.toLowerCase())) {
+        opt.selected = true;
+      }
+      selectRegional.appendChild(opt);
+    });
+    selectRegional.disabled = false;
 
-  const qClean = cleanStrClient(query);
-  const qStripped = qClean.replace(/^(divisao|divsao|div|divisoes)\s+/i, '').trim();
-  const words = qClean.split(' ').filter(w => w.length > 0);
-
-  const scored = [];
-  for (const d of allDivs) {
-    const dCanonical = cleanStrClient(d.divisao);
-    const dBase = cleanStrClient(d.base_name || d.divisao.replace(/^Divis[aã]o\s+/i, ''));
-    const dExact = cleanStrClient(d.divisao_completa || d.divisao);
-    let score = 99;
-
-    if (dBase === qStripped || dCanonical === qClean) {
-      score = 1;
-    } else if ((qStripped && dBase.startsWith(qStripped)) || dCanonical.startsWith(qClean)) {
-      score = 2; // Ex: "Pires do Rio" começa com "pires do" -> Score 2
-    } else if ((qStripped && dBase.includes(qStripped)) || dCanonical.includes(qClean)) {
-      score = 3;
-    } else if (words.length > 1 && words.every(w => dCanonical.includes(w) || dExact.includes(w))) {
-      score = 4;
-    } else if (dExact.includes(qClean) || cleanStrClient(d.regional).includes(qClean) || cleanStrClient(d.comando).includes(qClean)) {
-      score = 5;
-    }
-
-    if (score < 99) {
-      scored.push({ item: d, score });
+    if (selectRegional.value) {
+      preencherDivisoes(cmdObj, selectRegional.value, selectedDivNome);
     }
   }
 
-  scored.sort((a, b) => a.score - b.score || a.item.divisao.localeCompare(b.item.divisao, 'pt-BR'));
+  function preencherDivisoes(cmdObj, regNome, selectedDivNome = '') {
+    selectDivisao.innerHTML = '<option value="">Selecione uma Divisão</option>';
+    if (!regNome) {
+      selectDivisao.disabled = true;
+      return;
+    }
 
-  dList.replaceChildren(...scored.map(s => {
-    const opt = document.createElement('option');
-    opt.value = s.item.divisao;
-    opt.label = `${s.item.regional || ''} - ${s.item.comando || ''}`;
-    return opt;
-  }));
+    const regional = cmdObj?.regionais?.find(r => (r.nome === regNome || r.label === regNome));
+    if (!regional || !Array.isArray(regional.divisoes) || regional.divisoes.length === 0) {
+      selectDivisao.disabled = true;
+      selectDivisao.innerHTML = '<option value="">Nenhuma divisão encontrada</option>';
+      return;
+    }
+
+    regional.divisoes.forEach(div => {
+      const opt = document.createElement('option');
+      const nome = div.label || div.nome;
+      opt.value = nome;
+      opt.textContent = nome;
+      opt.dataset.id = div.id;
+      if (selectedDivNome && (
+        div.nome === selectedDivNome ||
+        div.label === selectedDivNome ||
+        nome.toLowerCase() === selectedDivNome.toLowerCase() ||
+        nome.toLowerCase().includes(selectedDivNome.toLowerCase()) ||
+        selectedDivNome.toLowerCase().includes(nome.toLowerCase())
+      )) {
+        opt.selected = true;
+      }
+      selectDivisao.appendChild(opt);
+    });
+    selectDivisao.disabled = false;
+  }
+
+  obterEstrutura().then(dadosEstrutura => {
+    selectComando.innerHTML = '<option value="">Selecione um Comando</option>';
+    let selectedCmdObj = null;
+
+    dadosEstrutura.forEach(cmd => {
+      const opt = document.createElement('option');
+      const nome = cmd.label || cmd.nome;
+      opt.value = nome;
+      opt.textContent = nome;
+      opt.dataset.id = cmd.id;
+      if (preSelected.comando && (cmd.nome.toLowerCase() === preSelected.comando.toLowerCase() || cmd.label.toLowerCase() === preSelected.comando.toLowerCase())) {
+        opt.selected = true;
+        selectedCmdObj = cmd;
+      }
+      selectComando.appendChild(opt);
+    });
+
+    if (selectedCmdObj || selectComando.value) {
+      const activeCmd = selectedCmdObj || dadosEstrutura.find(c => (c.label === selectComando.value || c.nome === selectComando.value));
+      preencherRegionais(activeCmd, preSelected.regional, preSelected.divisao);
+    }
+  }).catch(err => {
+    console.error('Erro ao preencher comandos:', err);
+    selectComando.innerHTML = '<option value="">Erro ao carregar comandos</option>';
+  });
+
+  selectComando.addEventListener('change', async () => {
+    const dadosEstrutura = await obterEstrutura();
+    const cmdNome = selectComando.value;
+    const cmdObj = dadosEstrutura.find(c => c.label === cmdNome || c.nome === cmdNome);
+    preencherRegionais(cmdObj);
+  });
+
+  selectRegional.addEventListener('change', async () => {
+    const dadosEstrutura = await obterEstrutura();
+    const cmdNome = selectComando.value;
+    const cmdObj = dadosEstrutura.find(c => c.label === cmdNome || c.nome === cmdNome);
+    preencherDivisoes(cmdObj, selectRegional.value);
+  });
 }
 
-let cachedDivisoesForAccount = [];
-fetch('/api/divisoes').then(r => r.json()).then(divs => {
-  cachedDivisoesForAccount = Array.isArray(divs) ? divs : [];
-  const dList = document.getElementById('divisoesList');
-  filterAndRenderDatalist(dList, cachedDivisoesForAccount, '');
+// Inicializa dropdowns encadeados para cadastro de novo integrante
+configurarDropdownsEstrutura(
+  document.getElementById('registerComando'),
+  document.getElementById('registerRegional'),
+  document.getElementById('registerDivisao')
+);
 
-  const accInput = document.getElementById('accountDivisaoInput');
-  const regInput = document.getElementById('registerDivisao');
-  [accInput, regInput].forEach(inp => {
-    if (inp) {
-      inp.addEventListener('input', () => {
-        filterAndRenderDatalist(dList, cachedDivisoesForAccount, inp.value);
-      });
-    }
-  });
-}).catch(() => {});
-
-// Atualização de Divisão
+// Atualização de Divisão cadastral no perfil do integrante
 const updateDivForm = document.getElementById('updateDivisaoForm');
 if (updateDivForm) {
   updateDivForm.addEventListener('submit', async e => {
     e.preventDefault();
-    const divInput = document.getElementById('accountDivisaoInput');
+    const cmdSelect = document.getElementById('accountComandoSelect');
+    const regSelect = document.getElementById('accountRegionalSelect');
+    const divSelect = document.getElementById('accountDivisaoSelect');
     const msg = document.getElementById('divisaoUpdateMessage');
-    const val = (divInput.value || '').trim();
-    if (!val) return;
+
+    const comando = (cmdSelect?.value || '').trim();
+    const regional = (regSelect?.value || '').trim();
+    const divisao = (divSelect?.value || '').trim();
+
+    if (!divisao) {
+      msg.textContent = 'Por favor, selecione sua Divisão.';
+      msg.style.color = '#ef4444';
+      return;
+    }
+
     try {
       msg.textContent = 'Atualizando...';
       msg.style.color = 'var(--text-muted)';
-      const res = await sendJson('/api/account/divisao', { divisao: val });
+      const res = await sendJson('/api/account/divisao', { divisao, regional, comando });
       msg.textContent = '✓ Divisão atualizada com sucesso!';
       msg.style.color = '#00e676';
       const prof = res.profile;
@@ -531,7 +620,6 @@ if (updateDivForm) {
       }
       const alertEl = document.getElementById('missingDivisaoAlert');
       if (alertEl) alertEl.style.display = 'none';
-      divInput.value = prof.divisao;
     } catch (err) {
       msg.textContent = err.message || 'Erro ao atualizar divisão.';
       msg.style.color = '#ef4444';

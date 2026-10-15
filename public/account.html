@@ -51,11 +51,27 @@
           <p>Sua Divisão fica aninhada com a respectiva Regional e Comando do motoclube.</p>
           <div id="currentDivisaoDetails" style="margin-bottom: 0.75rem; font-size: 0.95rem; color: #fff;"></div>
           <form id="updateDivisaoForm">
-            <div class="form-group">
-              <label for="accountDivisaoInput">Selecione ou digite sua Divisão:</label>
-              <input id="accountDivisaoInput" name="divisao" list="divisoesList" class="form-control" placeholder="Digite para buscar (Ex: Divisão Pires do Rio)" autocomplete="off" required>
+            <div class="grid-2" style="margin-bottom: 0.75rem;">
+              <div class="form-group" style="grid-column: 1 / -1;">
+                <label for="accountComandoSelect">1. Comando <span class="required">*</span></label>
+                <select id="accountComandoSelect" name="comando" class="form-control" required>
+                  <option value="">Carregando comandos...</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="accountRegionalSelect">2. Regional <span class="required">*</span></label>
+                <select id="accountRegionalSelect" name="regional" class="form-control" disabled required>
+                  <option value="">Selecione um comando primeiro</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="accountDivisaoSelect">3. Divisão <span class="required">*</span></label>
+                <select id="accountDivisaoSelect" name="divisao" class="form-control" disabled required>
+                  <option value="">Selecione uma regional primeiro</option>
+                </select>
+              </div>
             </div>
-            <button type="submit" class="btn-primary-insano">Atualizar</button>
+            <button type="submit" class="btn-primary-insano">Atualizar Divisão</button>
             <span id="divisaoUpdateMessage" role="status" aria-live="polite" style="margin-left: 0.75rem;"></span>
           </form>
         </div>
@@ -147,11 +163,23 @@
               <option value="PP - X">PP - X</option>
               <option value="SARGENTO DE ARMAS - X">SARGENTO DE ARMAS - X</option>
             </select></div>
-            <div class="form-group" style="grid-column:1/-1">
-              <label for="registerDivisao">Divisão do Insanos MC <span class="required">*</span></label>
-              <input id="registerDivisao" name="divisao" list="divisoesList" class="form-control" placeholder="Digite para buscar sua Divisão (Ex: Divisão Pires do Rio)" autocomplete="off" required>
-              <datalist id="divisoesList"></datalist>
-              <small style="color:var(--text-muted);font-size:0.8rem;">O sistema aninha automaticamente a Divisão com a Regional e o Comando.</small>
+            <div class="form-group" style="grid-column: 1 / -1;">
+              <label for="registerComando">Comando <span class="required">*</span></label>
+              <select id="registerComando" name="comando" class="form-control" required>
+                <option value="">Carregando comandos...</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="registerRegional">Regional <span class="required">*</span></label>
+              <select id="registerRegional" name="regional" class="form-control" disabled required>
+                <option value="">Selecione um comando primeiro</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="registerDivisao">Divisão <span class="required">*</span></label>
+              <select id="registerDivisao" name="divisao" class="form-control" disabled required>
+                <option value="">Selecione uma regional primeiro</option>
+              </select>
             </div>
             <div class="form-group" style="grid-column:1/-1"><label for="registerPassword">Senha (mínimo de 12 caracteres)</label><input id="registerPassword" name="password" type="password" class="form-control" minlength="12" autocomplete="new-password" required></div>
           </div>
