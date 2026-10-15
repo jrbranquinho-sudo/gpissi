@@ -567,7 +567,9 @@ app.post('/api/auth/logout', (req, res) => {
 // Endpoint de busca de Divisões do Insanos MC (com Regional e Comando aninhados)
 app.get('/api/divisoes', (req, res) => {
   const q = req.query.q || '';
-  res.json(divisoes.searchDivisions(q, 150));
+  const limitParam = req.query.limit;
+  const limit = limitParam !== undefined ? parseInt(limitParam, 10) : (q ? 60 : 0);
+  res.json(divisoes.searchDivisions(q, limit));
 });
 
 // Atualização de Divisão cadastral para usuários existentes

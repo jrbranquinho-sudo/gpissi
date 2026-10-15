@@ -409,17 +409,81 @@ fetch('/api/auth/me').then(async response => {
   }));
 }).catch(() => {});
 
-// Carregar lista de divisões no datalist
-fetch('/api/divisoes').then(r => r.json()).then(divs => {
-  const dList = document.getElementById('divisoesList');
-  if (dList && Array.isArray(divs)) {
-    dList.replaceChildren(...divs.map(d => {
+function cleanStrClient(str) {
+  return (str || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function filterAndRenderDatalist(dList, allDivs, query) {
+  if (!dList || !Array.isArray(allDivs)) return;
+  if (!query || !query.trim()) {
+    dList.replaceChildren(...allDivs.map(d => {
       const opt = document.createElement('option');
       opt.value = d.divisao;
       opt.label = `${d.regional || ''} - ${d.comando || ''}`;
       return opt;
     }));
+    return;
   }
+
+  const qClean = cleanStrClient(query);
+  const qStripped = qClean.replace(/^(divisao|divsao|div|divisoes)\s+/i, '').trim();
+  const words = qClean.split(' ').filter(w => w.length > 0);
+
+  const scored = [];
+  for (const d of allDivs) {
+    const dCanonical = cleanStrClient(d.divisao);
+    const dBase = cleanStrClient(d.base_name || d.divisao.replace(/^Divis[aã]o\s+/i, ''));
+    const dExact = cleanStrClient(d.divisao_completa || d.divisao);
+    let score = 99;
+
+    if (dBase === qStripped || dCanonical === qClean) {
+      score = 1;
+    } else if ((qStripped && dBase.startsWith(qStripped)) || dCanonical.startsWith(qClean)) {
+      score = 2; // Ex: "Pires do Rio" começa com "pires do" -> Score 2
+    } else if ((qStripped && dBase.includes(qStripped)) || dCanonical.includes(qClean)) {
+      score = 3;
+    } else if (words.length > 1 && words.every(w => dCanonical.includes(w) || dExact.includes(w))) {
+      score = 4;
+    } else if (dExact.includes(qClean) || cleanStrClient(d.regional).includes(qClean) || cleanStrClient(d.comando).includes(qClean)) {
+      score = 5;
+    }
+
+    if (score < 99) {
+      scored.push({ item: d, score });
+    }
+  }
+
+  scored.sort((a, b) => a.score - b.score || a.item.divisao.localeCompare(b.item.divisao, 'pt-BR'));
+
+  dList.replaceChildren(...scored.map(s => {
+    const opt = document.createElement('option');
+    opt.value = s.item.divisao;
+    opt.label = `${s.item.regional || ''} - ${s.item.comando || ''}`;
+    return opt;
+  }));
+}
+
+let cachedDivisoesForAccount = [];
+fetch('/api/divisoes').then(r => r.json()).then(divs => {
+  cachedDivisoesForAccount = Array.isArray(divs) ? divs : [];
+  const dList = document.getElementById('divisoesList');
+  filterAndRenderDatalist(dList, cachedDivisoesForAccount, '');
+
+  const accInput = document.getElementById('accountDivisaoInput');
+  const regInput = document.getElementById('registerDivisao');
+  [accInput, regInput].forEach(inp => {
+    if (inp) {
+      inp.addEventListener('input', () => {
+        filterAndRenderDatalist(dList, cachedDivisoesForAccount, inp.value);
+      });
+    }
+  });
 }).catch(() => {});
 
 // Atualização de Divisão

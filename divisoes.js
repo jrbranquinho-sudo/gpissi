@@ -3,6 +3,10 @@ const path = require('path');
 
 let divisionsList = [];
 
+const BRAZILIAN_UFS = 'ac|al|ap|am|ba|ce|df|es|go|ma|mt|ms|mg|pa|pb|pr|pe|pi|rj|rn|rs|ro|rr|sc|sp|se|to';
+const UF_END_REGEX = new RegExp(`\\s+(${BRAZILIAN_UFS})\\d?$`, 'i');
+const UF_DASH_REGEX = new RegExp(`\\s*-\\s*(${BRAZILIAN_UFS})\\d?.*$`, 'i');
+
 function cleanString(str) {
   return (str || '')
     .toLowerCase()
@@ -16,8 +20,8 @@ function cleanString(str) {
 function stripDivisionPrefix(str) {
   return cleanString(str)
     .replace(/^(divisao|divsao|div|divisoes)\s+/i, '')
-    .replace(/\s*-\s*[a-z]{2}\d?.*$/i, '')
-    .replace(/\s+[a-z]{2}\d?$/i, '')
+    .replace(UF_DASH_REGEX, '')
+    .replace(UF_END_REGEX, '')
     .trim();
 }
 
@@ -34,6 +38,8 @@ function loadDivisions() {
         key_canonical: cleanString(d.divisao),
         key_stripped: stripDivisionPrefix(d.base_name || d.divisao)
       }));
+      // Ordena alfabeticamente por padrão de A a Z
+      divisionsList.sort((a, b) => a.divisao.localeCompare(b.divisao, 'pt-BR'));
       return divisionsList;
     } catch (e) {
       console.warn('Erro ao carregar data/divisoes_data.json:', e.message);
@@ -80,6 +86,7 @@ function loadDivisions() {
           }
         }
       });
+      list.sort((a, b) => a.divisao.localeCompare(b.divisao, 'pt-BR'));
       divisionsList = list;
     } catch (err) {
       console.warn('Erro ao carregar planilha de divisões:', err.message);
@@ -133,20 +140,64 @@ function matchDivision(input) {
   };
 }
 
-function searchDivisions(query, limit = 50) {
+/**
+ * Busca inteligente com classificação por relevância (score)
+ * @param {string} query Termo pesquisado
+ * @param {number} limit Quantidade máxima (0 = todas sem limite)
+ */
+function searchDivisions(query, limit = 0) {
   const list = loadDivisions();
-  if (!query) return list.slice(0, limit);
+  if (!query || !query.trim()) {
+    return limit > 0 ? list.slice(0, limit) : list;
+  }
+
   const cleaned = cleanString(query);
   const stripped = stripDivisionPrefix(query);
+  const words = cleaned.split(' ').filter(w => w.length > 0);
 
-  const results = [];
+  const scored = [];
   for (const d of list) {
-    if (d.key_canonical.includes(cleaned) || (stripped && d.key_stripped.includes(stripped)) || d.key_exact.includes(cleaned)) {
-      results.push(d);
-      if (results.length >= limit) break;
+    let score = 99;
+
+    // Score 1: Match exato na base ou no canonical
+    if (d.key_stripped === stripped || d.key_canonical === cleaned || d.key_exact === cleaned) {
+      score = 1;
+    }
+    // Score 2: Começa exatamente com a busca (Ex: "Pires do Rio" começa com "pires do")
+    else if (
+      (stripped && d.key_stripped.startsWith(stripped)) ||
+      d.key_canonical.startsWith(cleaned) ||
+      cleanString(d.base_name).startsWith(stripped || cleaned)
+    ) {
+      score = 2;
+    }
+    // Score 3: Contém o termo completo na base ou canonical
+    else if ((stripped && d.key_stripped.includes(stripped)) || d.key_canonical.includes(cleaned)) {
+      score = 3;
+    }
+    // Score 4: Contém todas as palavras digitadas
+    else if (words.length > 1 && words.every(w => d.key_canonical.includes(w) || d.key_exact.includes(w))) {
+      score = 4;
+    }
+    // Score 5: Match na UF, Regional ou Comando
+    else if (
+      d.key_exact.includes(cleaned) ||
+      cleanString(d.regional).includes(cleaned) ||
+      cleanString(d.comando).includes(cleaned)
+    ) {
+      score = 5;
+    }
+
+    if (score < 99) {
+      scored.push({ item: d, score });
     }
   }
-  return results;
+
+  // Ordena por menor score (mais relevante) e depois ordem alfabética da divisão
+  scored.sort((a, b) => a.score - b.score || a.item.divisao.localeCompare(b.item.divisao, 'pt-BR'));
+
+  const results = scored.map(s => s.item);
+  return limit > 0 ? results.slice(0, limit) : results;
 }
 
 module.exports = {

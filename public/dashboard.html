@@ -1055,14 +1055,75 @@
       }
     }
 
+    let allDivisoesCache = [];
+
+    function cleanStrDash(str) {
+      return (str || '')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    }
+
+    function renderDivisoesDatalist(datalistEl, list, query) {
+      if (!datalistEl || !Array.isArray(list)) return;
+      if (!query || !query.trim()) {
+        datalistEl.innerHTML = list.map(d => `<option value="${d.divisao}">${d.regional} (${d.comando})</option>`).join('');
+        return;
+      }
+
+      const qClean = cleanStrDash(query);
+      const qStripped = qClean.replace(/^(divisao|divsao|div|divisoes)\s+/i, '').trim();
+      const words = qClean.split(' ').filter(w => w.length > 0);
+
+      const scored = [];
+      for (const d of list) {
+        const dCanonical = cleanStrDash(d.divisao);
+        const dBase = cleanStrDash(d.base_name || d.divisao.replace(/^Divis[aã]o\s+/i, ''));
+        const dExact = cleanStrDash(d.divisao_completa || d.divisao);
+        let score = 99;
+
+        if (dBase === qStripped || dCanonical === qClean) {
+          score = 1;
+        } else if ((qStripped && dBase.startsWith(qStripped)) || dCanonical.startsWith(qClean)) {
+          score = 2; // Ex: "Pires do Rio" começa com "pires do" -> Score 2
+        } else if ((qStripped && dBase.includes(qStripped)) || dCanonical.includes(qClean)) {
+          score = 3;
+        } else if (words.length > 1 && words.every(w => dCanonical.includes(w) || dExact.includes(w))) {
+          score = 4;
+        } else if (dExact.includes(qClean) || cleanStrDash(d.regional).includes(qClean) || cleanStrDash(d.comando).includes(qClean)) {
+          score = 5;
+        }
+
+        if (score < 99) {
+          scored.push({ item: d, score });
+        }
+      }
+
+      scored.sort((a, b) => a.score - b.score || a.item.divisao.localeCompare(b.item.divisao, 'pt-BR'));
+      datalistEl.innerHTML = scored.map(s => `<option value="${s.item.divisao}">${s.item.regional} (${s.item.comando})</option>`).join('');
+    }
+
     async function loadDivisoesOptions() {
       const datalist = document.getElementById('dashDivisoesList');
-      if (!datalist || datalist.children.length > 0) return;
+      const input = document.getElementById('dashInputDivisao');
+      if (!datalist) return;
       try {
-        const res = await fetch('/api/divisoes');
-        if (!res.ok) return;
-        const divisoes = await res.json();
-        datalist.innerHTML = divisoes.map(d => `<option value="${d.divisao}">${d.regional} (${d.comando})</option>`).join('');
+        if (allDivisoesCache.length === 0) {
+          const res = await fetch('/api/divisoes');
+          if (!res.ok) return;
+          allDivisoesCache = await res.json();
+        }
+        renderDivisoesDatalist(datalist, allDivisoesCache, '');
+
+        if (input && !input.dataset.smartSearchAttached) {
+          input.dataset.smartSearchAttached = 'true';
+          input.addEventListener('input', () => {
+            renderDivisoesDatalist(datalist, allDivisoesCache, input.value);
+          });
+        }
       } catch (e) {
         console.error('Erro ao carregar lista de divisões:', e);
       }
