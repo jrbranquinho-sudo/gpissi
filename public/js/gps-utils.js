@@ -117,7 +117,15 @@ function buildWhatsAppProtocolMessage(viagem, trackerUrl) {
   const vaiAcomp = viagem.vai_acompanhado === 'Sim' ? 'Sim' : 'Não';
   let quemJunto = vaiAcomp === 'Sim' ? (viagem.quem_vai_junto || 'Não informado') : 'Nenhum (Solo)';
   if (vaiAcomp === 'Sim' && Array.isArray(viagem.acompanhantes) && viagem.acompanhantes.length > 0) {
-    const nomes = viagem.acompanhantes.map(a => `${a.nome_colete || a.nome || 'Integrante'}${a.grau ? ` (${a.grau})` : ''}`).join(', ');
+    const nomes = viagem.acompanhantes.map(a => {
+      const pure = String(a.nome_puro || a.nome || a.nome_colete || 'Integrante').trim();
+      const clean = pure.replace(/\s*-\s*[a-zA-Záéíóúãõç\(\)]+$/i, '').trim() || pure;
+      const rel = String(a.grau || a.relacao || '').trim();
+      if (rel && rel.toLowerCase() !== 'nenhum' && rel.toLowerCase() !== 'contato' && rel.toLowerCase() !== 'integrante') {
+        return `${clean} - ${rel}`;
+      }
+      return clean;
+    }).join(', ');
     if (nomes) quemJunto = nomes;
   }
 

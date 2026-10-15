@@ -7,6 +7,7 @@ const rateLimit = require('express-rate-limit');
 const crypto = require('crypto');
 const storage = require('./storage');
 const auth = require('./auth');
+const divisoes = require('./divisoes');
 const { estimateDurationSeconds } = require('./route-estimate');
 const gpsUtils = require('./public/js/gps-utils');
 
@@ -482,11 +483,17 @@ app.post('/api/auth/register', accountLimiter, async (req, res) => {
   try {
     const email = sanitizeString(req.body.email, 254).toLowerCase();
     const password = String(req.body.password || '');
+    const rawDivisao = sanitizeString(req.body.divisao || '', 100);
+    const matchedDiv = divisoes.matchDivision(rawDivisao);
+
     const profile = {
       nome: sanitizeString(req.body.nome, 100),
       nome_colete: sanitizeString(req.body.nome_colete, 80),
       telefone: String(req.body.telefone || '').replace(/\D/g, '').slice(0, 11),
       funcao_grau: sanitizeString(req.body.funcao_grau, 100),
+      divisao: matchedDiv ? matchedDiv.divisao : (rawDivisao || ''),
+      regional: matchedDiv ? matchedDiv.regional : '',
+      comando: matchedDiv ? matchedDiv.comando : '',
       acompanhantes: []
     };
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || password.length < 12 || !profile.nome || !profile.nome_colete || profile.telefone.length !== 11 || !profile.funcao_grau) {
@@ -557,6 +564,28 @@ app.post('/api/auth/logout', (req, res) => {
   res.json({ success: true });
 });
 
+// Endpoint de busca de Divisões do Insanos MC (com Regional e Comando aninhados)
+app.get('/api/divisoes', (req, res) => {
+  const q = req.query.q || '';
+  res.json(divisoes.searchDivisions(q, 150));
+});
+
+// Atualização de Divisão cadastral para usuários existentes
+app.put('/api/account/divisao', requireAccount, async (req, res) => {
+  const rawDiv = sanitizeString(req.body.divisao || '', 100);
+  if (!rawDiv || !rawDiv.trim()) {
+    return res.status(400).json({ error: 'Informe a sua Divisão do Insanos MC.' });
+  }
+  const matched = divisoes.matchDivision(rawDiv);
+  const updates = {
+    divisao: matched ? matched.divisao : rawDiv,
+    regional: matched ? matched.regional : '',
+    comando: matched ? matched.comando : ''
+  };
+  const updatedProfile = await storage.updateUserProfile(req.user.id, updates);
+  res.json({ success: true, profile: updatedProfile, user: updatedProfile, division: matched });
+});
+
 app.get('/api/members', requireAccount, async (req, res) => {
   const members = await storage.listMembers();
   const companions = await storage.listOwnedContacts('companions', req.user.id);
@@ -578,22 +607,54 @@ app.get('/api/account/emergency-contacts', requireAccount, async (req, res) => {
   res.json(await storage.listOwnedContacts('emergency_contacts', req.user.id));
 });
 
-const VALID_RELATIONSHIPS = ['Nenhum', 'Esposa', 'Filho(a)', 'Neto(a)', 'Sobrinho(a)', 'Amigo(a)'];
+const VALID_RELATIONSHIPS = [
+  'Nenhum',
+  'Esposa',
+  'Esposo',
+  'Filho(a)',
+  'Neto(a)',
+  'Mãe',
+  'Pai',
+  'Irmã(o)',
+  'Sobrinho(a)',
+  'Cunhada',
+  'Cunhado',
+  'Amigo(a)',
+  'Outros'
+];
 const RELATIONSHIP_MAP = {
   'nenhum': 'Nenhum',
   'esposa': 'Esposa',
+  'esposo': 'Esposo',
+  'marido': 'Esposo',
+  'companheiro': 'Esposo',
+  'companheira': 'Esposa',
   'filho(a)': 'Filho(a)',
   'filho': 'Filho(a)',
   'filha': 'Filho(a)',
   'neto(a)': 'Neto(a)',
   'neto': 'Neto(a)',
   'neta': 'Neto(a)',
+  'mae': 'Mãe',
+  'mãe': 'Mãe',
+  'pai': 'Pai',
+  'irma(o)': 'Irmã(o)',
+  'irmã(o)': 'Irmã(o)',
+  'irma': 'Irmã(o)',
+  'irmã': 'Irmã(o)',
+  'irmao': 'Irmã(o)',
+  'irmão': 'Irmã(o)',
   'sobrinho(a)': 'Sobrinho(a)',
   'sobrinho': 'Sobrinho(a)',
   'sobrinha': 'Sobrinho(a)',
+  'cunhada': 'Cunhada',
+  'cunhado': 'Cunhado',
+  'cunhada(o)': 'Cunhada',
   'amigo(a)': 'Amigo(a)',
   'amigo': 'Amigo(a)',
-  'amiga': 'Amigo(a)'
+  'amiga': 'Amigo(a)',
+  'outro': 'Outros',
+  'outros': 'Outros'
 };
 
 function normalizeRelationship(value) {
@@ -603,19 +664,33 @@ function normalizeRelationship(value) {
 
 const COMPANION_RELATION_PRIORITY = {
   'esposa': 1,
+  'esposo': 1,
   'filho(a)': 2,
   'filho': 2,
   'filha': 2,
-  'neto(a)': 3,
-  'neto': 3,
-  'neta': 3,
-  'sobrinho(a)': 4,
-  'sobrinho': 4,
-  'sobrinha': 4,
-  'amigo(a)': 5,
-  'amigo': 5,
-  'amiga': 5,
-  'nenhum': 6
+  'mae': 3,
+  'mãe': 3,
+  'pai': 4,
+  'neto(a)': 5,
+  'neto': 5,
+  'neta': 5,
+  'irma(o)': 6,
+  'irmã(o)': 6,
+  'irma': 6,
+  'irmã': 6,
+  'irmao': 6,
+  'irmão': 6,
+  'sobrinho(a)': 7,
+  'sobrinho': 7,
+  'sobrinha': 7,
+  'cunhada': 8,
+  'cunhado': 8,
+  'amigo(a)': 9,
+  'amigo': 9,
+  'amiga': 9,
+  'outros': 10,
+  'outro': 10,
+  'nenhum': 11
 };
 
 function sortCompanionsByRelation(companions) {
@@ -628,12 +703,14 @@ function sortCompanionsByRelation(companions) {
 }
 
 function formatCompanionDisplayName(comp) {
-  const name = comp.nome_puro || comp.nome || comp.nome_colete || '';
-  const rel = (comp.relacao || '').trim().toLowerCase();
-  if (rel && rel !== 'nenhum') {
-    return `${name} - ${rel}`;
+  const pureName = String(comp.nome_puro || comp.nome || comp.nome_colete || '').trim();
+  // Limpa sufixo pré-existente de relação para evitar duplicações como "Pedro - neto(a)(Neto(a))"
+  const cleanName = pureName.replace(/\s*-\s*[a-zA-Záéíóúãõç\(\)]+$/i, '').trim() || pureName;
+  const rel = String(comp.relacao || comp.grau || '').trim();
+  if (rel && rel.toLowerCase() !== 'nenhum' && rel.toLowerCase() !== 'contato' && rel.toLowerCase() !== 'integrante') {
+    return `${cleanName} - ${rel}`;
   }
-  return name;
+  return cleanName;
 }
 
 function isTripCreator(req, viagem, token, pin) {
@@ -1033,8 +1110,9 @@ app.post('/api/viagens', createTripLimiter, requireAccount, async (req, res) => 
         const hasRel = contact.relacao && contact.relacao !== 'Nenhum';
         return {
           id: contact.id,
-          nome_colete: hasRel ? `${contact.nome} - ${contact.relacao.toLowerCase()}` : contact.nome,
+          nome_colete: contact.nome,
           nome_puro: contact.nome,
+          nome: contact.nome,
           relacao: contact.relacao || 'Nenhum',
           grau: hasRel ? contact.relacao : 'Contato',
           funcao: 'Acompanhante',
@@ -1269,8 +1347,9 @@ app.post('/api/viagens/:id/retorno', createTripLimiter, requireAccount, async (r
           const hasRel = contact.relacao && contact.relacao !== 'Nenhum';
           return {
             id: contact.id,
-            nome_colete: hasRel ? `${contact.nome} - ${contact.relacao.toLowerCase()}` : contact.nome,
+            nome_colete: contact.nome,
             nome_puro: contact.nome,
+            nome: contact.nome,
             relacao: contact.relacao || 'Nenhum',
             grau: hasRel ? contact.relacao : 'Contato',
             funcao: 'Acompanhante',
@@ -1662,26 +1741,65 @@ app.post('/api/viagens/:id/checkin', checkinLimiter, loadOptionalAccount, async 
       return res.status(400).json({ error: 'Latitude e Longitude válidas são obrigatórias para check-in.' });
     }
 
-    // PROTEÇÃO CONTRA IP DE PROVEDOR:
-    // Verifica se o ponto está no corredor geográfico da viagem entre origem e destino
+    // SUPORTE A DESVIOS DE ROTA E PROTEÇÃO CONTRA IP DE PROVEDOR:
     if (viagem.origem_geo && viagem.destino_geo) {
       const inCorridor = gpsUtils.isPointInRouteCorridor(pLat, pLng, viagem.origem_geo, viagem.destino_geo);
       if (!inCorridor) {
-        console.warn(`[Telemetria] Ponto ${pLat}, ${pLng} ignorado: fora do corredor da rota (${viagem.origem} -> ${viagem.destino}). Provável IP de provedor.`);
-        return res.status(200).json({
-          success: false,
-          ignored: true,
-          message: 'Ponto fora da rota geográfica da viagem (provável IP de provedor descartado).',
-          last_location: viagem.last_location || viagem.checkins[viagem.checkins.length - 1],
-          checkins_count: viagem.checkins.length
-        });
+        // Permite desvios de rota rodoviários legítimos (tolerância ampliada de até 350km)
+        const inDetourMargin = gpsUtils.isPointInRouteCorridor(pLat, pLng, viagem.origem_geo, viagem.destino_geo, 350);
+        if (!inDetourMargin) {
+          console.warn(`[Telemetria] Ponto ${pLat}, ${pLng} ignorado: fora de qualquer margem rodoviária (${viagem.origem} -> ${viagem.destino}). Provável IP de provedor.`);
+          return res.status(200).json({
+            success: false,
+            ignored: true,
+            message: 'Ponto fora da rota geográfica da viagem (provável IP de provedor descartado).',
+            last_location: viagem.last_location || viagem.checkins[viagem.checkins.length - 1],
+            checkins_count: viagem.checkins.length
+          });
+        }
+        console.log(`[Telemetria] Desvio de rota aceito em [${pLat}, ${pLng}]. Trajeto atualizado.`);
       }
     }
 
     const passageCity = await reverseGeocodeLocation(pLat, pLng);
-    const lastCheckinCity = viagem.checkins[viagem.checkins.length - 1]?.cidade;
+    const lastCheckin = viagem.checkins.length ? viagem.checkins[viagem.checkins.length - 1] : null;
+    const lastCheckinCity = lastCheckin?.cidade;
     const previousCity = viagem.last_city || lastCheckinCity;
     const resolvedCity = passageCity || (cidade && cidade !== 'Localização GPS' ? cidade : previousCity) || 'Em deslocamento na Rodovia';
+
+    // Item 1: "Quando em uma cidade, basta um registro pra identificar que o usuário passou ou está naquela cidade."
+    // Evita duplicatas consecutivas na mesma cidade se não houve deslocamento expressivo (>= 300m) ou tempo (> 2min)
+    const isSameCity = Boolean(lastCheckin && resolvedCity && lastCheckinCity &&
+      resolvedCity.toLowerCase().trim() === lastCheckinCity.toLowerCase().trim());
+
+    const distFromLastKm = lastCheckin
+      ? gpsUtils.haversineDistanceKm(lastCheckin.lat, lastCheckin.lng, pLat, pLng)
+      : Infinity;
+
+    const timeDiffSeconds = (lastCheckin && lastCheckin.timestamp)
+      ? Math.abs((Date.now() - new Date(lastCheckin.timestamp).getTime()) / 1000)
+      : Infinity;
+
+    if (isSameCity && distFromLastKm < 0.3 && timeDiffSeconds < 120) {
+      viagem.last_location = {
+        lat: pLat,
+        lng: pLng,
+        timestamp: timestamp && !Number.isNaN(Date.parse(timestamp)) ? new Date(timestamp).toISOString() : new Date().toISOString(),
+        cidade: resolvedCity,
+        descricao: `Em deslocamento por ${resolvedCity}`,
+        tipo: 'gps'
+      };
+      if (passageCity) viagem.last_city = passageCity;
+      viagem.updated_at = new Date().toISOString();
+      await storage.saveTrip(viagem);
+
+      return res.json({
+        success: true,
+        deduplicated: true,
+        last_location: viagem.last_location,
+        checkins_count: viagem.checkins.length
+      });
+    }
 
     const checkin = gpsUtils.buildGpsCheckin({
       lat: pLat,

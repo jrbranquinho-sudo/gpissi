@@ -358,6 +358,33 @@
       </div>
     </div>
 
+    <!-- AVISO DE ATUALIZAÇÃO CADASTRAL: DIVISÃO -->
+    <div id="missingDivisaoBanner" style="display: none; background: rgba(255, 102, 0, 0.12); border: 2px solid var(--issi-orange); border-radius: var(--radius-md); padding: 1.25rem 1.5rem; margin-bottom: 2rem; box-shadow: 0 0 25px rgba(255, 102, 0, 0.25);">
+      <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem;">
+        <div style="display: flex; align-items: flex-start; gap: 1rem; max-width: 600px;">
+          <span style="font-size: 2.2rem; line-height: 1;">⚠️</span>
+          <div>
+            <h3 style="color: #fff; margin: 0; font-family: var(--font-sub); font-size: 1.15rem; font-weight: 800; letter-spacing: 0.5px;">
+              ATUALIZAÇÃO CADASTRAL OBRIGATÓRIA &bull; SUA DIVISÃO
+            </h3>
+            <p style="color: #cbd5e1; margin: 0.35rem 0 0 0; font-size: 0.88rem; line-height: 1.4;">
+              Identificamos que seu cadastro ainda não possui uma <strong>Divisão</strong> vinculada. Informe sua Divisão para que o sistema aninhe automaticamente sua <strong>Regional</strong> e <strong>Comando</strong>.
+            </p>
+          </div>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 0.5rem; flex: 1; min-width: 280px; max-width: 480px;">
+          <div style="display: flex; gap: 0.5rem;">
+            <input type="text" id="dashInputDivisao" list="dashDivisoesList" class="form-control" placeholder="Ex: Divisão Pires do Rio..." style="flex: 1; padding: 0.65rem 0.9rem; font-size: 0.9rem; background: var(--bg-secondary); border: 1px solid var(--border-subtle); color: #fff; border-radius: var(--radius-sm);">
+            <datalist id="dashDivisoesList"></datalist>
+            <button type="button" id="btnSalvarDivisaoDash" onclick="salvarDivisaoDashboard()" class="btn-primary-insano" style="padding: 0.65rem 1.2rem; font-size: 0.88rem; white-space: nowrap; cursor: pointer;">
+              SALVAR
+            </button>
+          </div>
+          <div id="dashDivisaoFeedback" style="display: none; font-size: 0.82rem; font-weight: 600;"></div>
+        </div>
+      </div>
+    </div>
+
     <!-- OVERDUE / SAFETY ALERTS (MONITORAMENTO DE ATRASO) -->
     <div id="dashOverdueAlertsContainer" class="overdue-banner-box" style="display: none;">
       <div style="display: flex; align-items: flex-start; gap: 0.85rem;">
@@ -517,11 +544,33 @@
             </div>
 
             <div id="retCompanionsBox" style="display: none; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 0.6rem;">
-              <div style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 0.4rem;" id="retCompanionsCount">
-                Selecione até 4 acompanhantes cadastrados:
+              <div style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 0.6rem;" id="retCompanionsCount">
+                Selecione até 4 acompanhantes:
               </div>
-              <div id="retCompanionsList" style="display: flex; flex-direction: column; gap: 0.4rem; max-height: 160px; overflow-y: auto;">
-                <div style="font-size: 0.8rem; color: var(--text-muted);">Carregando integrantes...</div>
+
+              <!-- FAMILIARES -->
+              <div style="margin-bottom: 0.8rem; background: var(--bg-card); padding: 0.6rem; border-radius: var(--radius-sm); border: 1px solid rgba(255,255,255,0.05);">
+                <div style="font-size: 0.8rem; font-weight: 700; color: var(--issi-orange); margin-bottom: 0.4rem; display: flex; align-items: center; gap: 0.35rem;">
+                  <span>👨‍👩‍👦 ACOMPANHANTES DA FAMÍLIA</span>
+                </div>
+                <div id="retFamiliaresList" style="display: flex; flex-direction: column; gap: 0.35rem; max-height: 120px; overflow-y: auto;">
+                  <div style="font-size: 0.78rem; color: var(--text-muted);">Carregando familiares...</div>
+                </div>
+              </div>
+
+              <!-- BONDE: MEMBROS DO MOTOCLUBE POR DIVISÃO -->
+              <div style="background: var(--bg-card); padding: 0.6rem; border-radius: var(--radius-sm); border: 1px solid rgba(255,255,255,0.05);">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem; flex-wrap: wrap; gap: 0.3rem;">
+                  <span style="font-size: 0.8rem; font-weight: 700; color: var(--gp-blue); display: flex; align-items: center; gap: 0.35rem;">
+                    <span>🏍️ CRIAR BONDE (MEMBROS DO MOTOCLUBE)</span>
+                  </span>
+                  <select id="retFiltroDivisao" onchange="filterRetMembersByDivisao()" style="font-size: 0.75rem; background: var(--bg-secondary); color: #fff; border: 1px solid var(--border-subtle); border-radius: 3px; padding: 0.2rem 0.4rem; max-width: 190px;">
+                    <option value="">Todas as Divisões</option>
+                  </select>
+                </div>
+                <div id="retBondeList" style="display: flex; flex-direction: column; gap: 0.35rem; max-height: 140px; overflow-y: auto;">
+                  <div style="font-size: 0.78rem; color: var(--text-muted);">Carregando integrantes do clube...</div>
+                </div>
               </div>
             </div>
           </div>
@@ -591,6 +640,7 @@
 
     document.addEventListener('DOMContentLoaded', () => {
       fetchDashboardTrips();
+      checkUserDivisao();
 
       // As demais páginas ficam estáticas (sem auto-refresh periódico)
       document.getElementById('dashSearch').addEventListener('input', (e) => {
@@ -988,44 +1038,155 @@
       document.getElementById('returnDeliveryModal').style.display = 'none';
     }
 
+    async function checkUserDivisao() {
+      try {
+        const res = await fetch('/api/auth/me');
+        if (!res.ok) return;
+        const data = await res.json();
+        const profile = data.user?.profile || data.profile || data.user || {};
+        const div = profile.divisao;
+        if (!div || div === 'Sem Divisão') {
+          const banner = document.getElementById('missingDivisaoBanner');
+          if (banner) banner.style.display = 'block';
+          loadDivisoesOptions();
+        }
+      } catch (e) {
+        console.error('Erro ao verificar divisão:', e);
+      }
+    }
+
+    async function loadDivisoesOptions() {
+      const datalist = document.getElementById('dashDivisoesList');
+      if (!datalist || datalist.children.length > 0) return;
+      try {
+        const res = await fetch('/api/divisoes');
+        if (!res.ok) return;
+        const divisoes = await res.json();
+        datalist.innerHTML = divisoes.map(d => `<option value="${d.divisao}">${d.regional} (${d.comando})</option>`).join('');
+      } catch (e) {
+        console.error('Erro ao carregar lista de divisões:', e);
+      }
+    }
+
+    async function salvarDivisaoDashboard() {
+      const input = document.getElementById('dashInputDivisao');
+      const feedback = document.getElementById('dashDivisaoFeedback');
+      const btn = document.getElementById('btnSalvarDivisaoDash');
+      const val = input.value.trim();
+      if (!val) {
+        feedback.style.display = 'block';
+        feedback.style.color = '#ef4444';
+        feedback.textContent = 'Por favor, informe sua Divisão.';
+        return;
+      }
+      btn.disabled = true;
+      btn.textContent = 'SALVANDO...';
+      try {
+        const res = await fetch('/api/account/divisao', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ divisao: val })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Erro ao salvar divisão');
+        const userProfile = data.profile || data.user || {};
+        feedback.style.display = 'block';
+        feedback.style.color = 'var(--accent-green)';
+        feedback.innerHTML = `✓ Cadastro atualizado: <strong>${userProfile.divisao || val}</strong> (${userProfile.regional || ''} &bull; ${userProfile.comando || ''})`;
+        setTimeout(() => {
+          const banner = document.getElementById('missingDivisaoBanner');
+          if (banner) banner.style.display = 'none';
+        }, 3000);
+      } catch (err) {
+        feedback.style.display = 'block';
+        feedback.style.color = '#ef4444';
+        feedback.textContent = 'Falha: ' + err.message;
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'SALVAR';
+      }
+    }
+
+    let retPreselectedSet = new Set();
+
     async function loadMembersForReturn(preselected = []) {
-      const container = document.getElementById('retCompanionsList');
+      const famContainer = document.getElementById('retFamiliaresList');
+      const bondeContainer = document.getElementById('retBondeList');
+      const filtroDivisao = document.getElementById('retFiltroDivisao');
+
       try {
         if (!cachedMembers) {
           const res = await fetch('/api/members');
           if (!res.ok) throw new Error('Não foi possível listar integrantes');
           cachedMembers = await res.json();
         }
-        const preselectedIds = new Set(preselected.map(p => typeof p === 'object' ? p.id : p));
-        container.innerHTML = '';
-        if (cachedMembers.length === 0) {
-          container.innerHTML = '<div style="font-size: 0.8rem; color: var(--text-muted);">Nenhum integrante cadastrado.</div>';
-          return;
-        }
-        cachedMembers.forEach(m => {
-          const label = document.createElement('label');
-          label.style.cssText = 'display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; color: #cbd5e1; cursor: pointer;';
-          const chk = document.createElement('input');
-          chk.type = 'checkbox';
-          chk.name = 'ret_companion_option';
-          chk.value = m.id;
-          if (preselectedIds.has(m.id)) chk.checked = true;
-          chk.addEventListener('change', updateRetCompanionCount);
-          const span = document.createElement('span');
-          if (m.kind === 'contact') {
-            const rel = m.relacao && m.relacao !== 'Nenhum' ? ` - ${m.relacao.toLowerCase()}` : '';
-            span.textContent = `${m.nome}${rel} · ${m.telefone}`;
+        retPreselectedSet = new Set(preselected.map(p => typeof p === 'object' ? p.id : p));
+
+        const familiares = cachedMembers.filter(m => m.kind === 'contact');
+        const clubMembros = cachedMembers.filter(m => m.kind !== 'contact');
+
+        // Render Familiares
+        if (famContainer) {
+          if (familiares.length === 0) {
+            famContainer.innerHTML = '<div style="font-size: 0.78rem; color: var(--text-muted);">Nenhum familiar cadastrado na sua conta.</div>';
           } else {
-            const role = [m.grau, m.funcao].filter(Boolean).join(' - ');
-            span.textContent = `${m.nome_colete}${role ? ` (${role})` : ''}`;
+            famContainer.innerHTML = familiares.map(m => {
+              const checked = retPreselectedSet.has(m.id) ? 'checked' : '';
+              const rel = m.relacao && m.relacao !== 'Nenhum' ? ` - ${m.relacao}` : '';
+              return `
+                <label style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.82rem; color: #cbd5e1; cursor: pointer;">
+                  <input type="checkbox" name="ret_companion_option" value="${m.id}" ${checked} onchange="updateRetCompanionCount(event)">
+                  <span>${m.nome}${rel} &bull; ${m.telefone || ''}</span>
+                </label>
+              `;
+            }).join('');
           }
-          label.append(chk, span);
-          container.append(label);
-        });
+        }
+
+        // Preenche filtro de Divisões do Bonde
+        if (filtroDivisao) {
+          const uniqueDivisoes = [...new Set(clubMembros.map(m => m.divisao || 'Sem Divisão'))].sort();
+          filtroDivisao.innerHTML = '<option value="">Todas as Divisões</option>' +
+            uniqueDivisoes.map(d => `<option value="${d}">${d}</option>`).join('');
+        }
+
+        renderRetBondeMembers();
         updateRetCompanionCount();
       } catch (err) {
-        container.innerHTML = `<div style="font-size: 0.8rem; color: #ef4444;">${err.message}</div>`;
+        if (famContainer) famContainer.innerHTML = `<div style="font-size: 0.78rem; color: #ef4444;">${err.message}</div>`;
       }
+    }
+
+    function renderRetBondeMembers() {
+      const bondeContainer = document.getElementById('retBondeList');
+      const filtro = document.getElementById('retFiltroDivisao')?.value || '';
+      if (!bondeContainer || !cachedMembers) return;
+
+      let clubMembros = cachedMembers.filter(m => m.kind !== 'contact');
+      if (filtro) {
+        clubMembros = clubMembros.filter(m => (m.divisao || 'Sem Divisão') === filtro);
+      }
+
+      if (clubMembros.length === 0) {
+        bondeContainer.innerHTML = '<div style="font-size: 0.78rem; color: var(--text-muted);">Nenhum integrante encontrado para esta Divisão.</div>';
+        return;
+      }
+
+      bondeContainer.innerHTML = clubMembros.map(m => {
+        const checked = retPreselectedSet.has(m.id) ? 'checked' : '';
+        const role = [m.grau, m.funcao].filter(Boolean).join(' - ');
+        const div = m.divisao ? ` [${m.divisao}]` : '';
+        return `
+          <label style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.82rem; color: #cbd5e1; cursor: pointer;">
+            <input type="checkbox" name="ret_companion_option" value="${m.id}" ${checked} onchange="updateRetCompanionCount(event)">
+            <span><strong>${m.nome_colete}</strong>${role ? ` (${role})` : ''}${div}</span>
+          </label>
+        `;
+      }).join('');
+    }
+
+    function filterRetMembersByDivisao() {
+      renderRetBondeMembers();
     }
 
     function updateRetCompanionCount(event) {
@@ -1035,7 +1196,12 @@
         event.target.checked = false;
       }
       const count = document.querySelectorAll('input[name="ret_companion_option"]:checked').length;
-      document.getElementById('retCompanionsCount').textContent = `${count} de 4 acompanhantes selecionados:`;
+      const countEl = document.getElementById('retCompanionsCount');
+      if (countEl) countEl.textContent = `${count} de 4 acompanhantes selecionados:`;
+      if (event && event.target) {
+        if (event.target.checked) retPreselectedSet.add(event.target.value);
+        else retPreselectedSet.delete(event.target.value);
+      }
     }
 
     function toggleRetCompanions(preselected = []) {

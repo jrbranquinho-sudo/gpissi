@@ -15,13 +15,21 @@ let plannedRouteKey = '';
 let plannedRoutePromise = null;
 let isSendingGps = false;
 
-// 5-second GPS tracking timer & continuous GPS watcher
-const TRACK_INTERVAL_SECONDS = 5; // Intervalo de 5 segundos
+// Service Worker registration para persistência em segundo plano e cache offline
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(e => console.warn('SW reg:', e));
+  });
+}
+
+// 30-second GPS tracking timer & continuous GPS watcher
+const TRACK_INTERVAL_SECONDS = 30; // Intervalo de 30 segundos
 let trackCountdown = TRACK_INTERVAL_SECONDS;
 let autoTrackingInterval = null;
 let countdownTimer = null;
 let gpsWatchId = null;
 let lastKnownGpsPos = null;
+let lastRecalculatedCoords = null;
 
 document.addEventListener('DOMContentLoaded', () => {
   const urlParams = new URLSearchParams(window.location.search);
@@ -525,7 +533,15 @@ function renderTripDetails(trip) {
     const vaiAcomp = viagem.vai_acompanhado === 'Sim' ? 'Sim' : 'Não';
     let quemJunto = vaiAcomp === 'Sim' ? (viagem.quem_vai_junto || 'Não informado') : 'Nenhum (Solo)';
     if (vaiAcomp === 'Sim' && Array.isArray(viagem.acompanhantes) && viagem.acompanhantes.length > 0) {
-      const nomes = viagem.acompanhantes.map(a => `${a.nome_colete || a.nome || 'Integrante'}${a.grau ? ` (${a.grau})` : ''}`).join(', ');
+      const nomes = viagem.acompanhantes.map(a => {
+        const pure = String(a.nome_puro || a.nome || a.nome_colete || 'Integrante').trim();
+        const clean = pure.replace(/\s*-\s*[a-zA-Záéíóúãõç\(\)]+$/i, '').trim() || pure;
+        const rel = String(a.grau || a.relacao || '').trim();
+        if (rel && rel.toLowerCase() !== 'nenhum' && rel.toLowerCase() !== 'contato' && rel.toLowerCase() !== 'integrante') {
+          return `${clean} - ${rel}`;
+        }
+        return clean;
+      }).join(', ');
       if (nomes) quemJunto = nomes;
     }
     const notas = viagem.observacoes_notas && viagem.observacoes_notas.trim() ? viagem.observacoes_notas.trim() : 'Nenhuma observação informada.';
@@ -662,13 +678,14 @@ function startGpsWatcher(tripId) {
             timestamp: pos.timestamp || Date.now()
           };
 
-          // Transmissão por deslocamento: se moveu >= 35 metros desde o último envio, transmite imediatamente
+          // Transmissão por deslocamento: transmite quando mover >= 250 metros
           if (tripId && isCreatorAuth && currentTrip && currentTrip.status === 'EM ANDAMENTO' && !isSendingGps) {
             const distMovedKm = (lastTransmittedLat !== null && lastTransmittedLng !== null && typeof haversineDistanceKm === 'function')
               ? haversineDistanceKm(lastTransmittedLat, lastTransmittedLng, lat, lng)
               : Infinity;
-            if (distMovedKm >= 0.035) {
+            if (distMovedKm >= 0.25) {
               transmitGpsLocation(tripId, true);
+              recalculateRouteFromCurrentLocation(lat, lng);
             }
           }
         }
@@ -779,20 +796,14 @@ async function transmitGpsLocation(tripId, isAutomatic = false) {
         return;
       }
 
-      // Validação de corredor da rota no frontend
+      // Validação de desvio da rota e recálculo automático
       if (currentTrip && currentTrip.origem_geo && currentTrip.destino_geo) {
         const inCorridor = (typeof GPISSIGps !== 'undefined' && GPISSIGps.isPointInRouteCorridor)
           ? GPISSIGps.isPointInRouteCorridor(lat, lng, currentTrip.origem_geo, currentTrip.destino_geo)
           : true;
         if (!inCorridor) {
-          console.warn(`[GPISSI Telemetria] Ponto [${lat}, ${lng}] fora do corredor da rota. Ignorado.`);
-          isSendingGps = false;
-          if (!isAutomatic && btn) {
-            btn.disabled = false;
-            btn.innerHTML = '<span>📡 Transmitir Ponto no Trajeto Agora</span>';
-            alert('A localização detectada está distante da rota oficial planejada. Ponto não transmitido para manter a integridade do mapa.');
-          }
-          return;
+          console.log(`[GPISSI Telemetria] Desvio detectado em [${lat}, ${lng}]. Recalculando rota automaticamente.`);
+          recalculateRouteFromCurrentLocation(lat, lng);
         }
       }
 
@@ -1082,6 +1093,20 @@ function setupNetworkListeners(tripId) {
       }
     }
   });
+
+  window.addEventListener('focus', () => {
+    if (currentTrip && currentTrip.status === 'EM ANDAMENTO' && isCreatorAuth) {
+      requestScreenWakeLock();
+      syncOfflineCheckins(tripId).finally(() => transmitGpsLocation(tripId, true));
+    }
+  });
+
+  window.addEventListener('pageshow', () => {
+    if (currentTrip && currentTrip.status === 'EM ANDAMENTO' && isCreatorAuth) {
+      requestScreenWakeLock();
+      syncOfflineCheckins(tripId).finally(() => transmitGpsLocation(tripId, true));
+    }
+  });
 }
 
 // RENDER MAP WITH OPENFREEMAP & MAPLIBRE GL JS
@@ -1184,6 +1209,51 @@ function renderMapElements(trip) {
   drawRecordedTrack(trip.checkins || []);
   if (hasOrigin && hasDestination) fetchRoadRoute([oGeo.lon, oGeo.lat], [dGeo.lon, dGeo.lat]);
   else fitRouteBounds();
+}
+
+// RECÁLCULO AUTOMÁTICO DE ROTA QUANDO HÁ DESVIO
+async function recalculateRouteFromCurrentLocation(lat, lng) {
+  if (!currentTrip || !currentTrip.destino_geo) return;
+  const dGeo = currentTrip.destino_geo;
+  const dLon = dGeo.lon || dGeo.lng || dGeo.longitude;
+  const dLat = dGeo.lat || dGeo.latitude;
+  if (!GPISSIGps.isValidCoordinate(dLat, dLon) || !GPISSIGps.isValidCoordinate(lat, lng)) return;
+
+  if (lastRecalculatedCoords &&
+      Math.abs(lastRecalculatedCoords[0] - lat) < 0.003 &&
+      Math.abs(lastRecalculatedCoords[1] - lng) < 0.003) {
+    return;
+  }
+  lastRecalculatedCoords = [lat, lng];
+
+  try {
+    const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${lng},${lat};${dLon},${dLat}?overview=full&geometries=geojson`;
+    const res = await fetch(osrmUrl);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.routes && data.routes.length > 0) {
+        const route = data.routes[0];
+        const geojson = {
+          type: 'Feature',
+          properties: { recalculated: true },
+          geometry: route.geometry
+        };
+        const distanceKm = Math.round(route.distance / 1000);
+        const durationHours = Math.floor(route.duration / 3600);
+        const durationMinutes = Math.round((route.duration % 3600) / 60);
+
+        const distEl = document.getElementById('statDistance');
+        const durEl = document.getElementById('statDuration');
+        if (distEl) distEl.textContent = `${distanceKm} km (Recalculado)`;
+        if (durEl) durEl.textContent = `${durationHours}h ${durationMinutes}min`;
+
+        drawRouteOnMap(geojson);
+        console.log(`[GPISSI Rota] Rota recalculada automaticamente: restante ${distanceKm} km.`);
+      }
+    }
+  } catch (err) {
+    console.warn('Erro ao recalcular rota:', err);
+  }
 }
 
 async function fetchRoadRoute(startCoord, endCoord) {

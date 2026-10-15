@@ -380,68 +380,184 @@ async function setupVehicleCatalog() {
   }
 }
 
-// 7. COMPANION TOGGLE
+// 7. COMPANION & BONDE TOGGLE (Separa familiares de membros do MC por Divisão)
 function setupCompanionToggle() {
   const companionRadios = document.querySelectorAll('input[name="vai_acompanhado"]');
   const acompanhanteBox = document.getElementById('acompanhante_box');
-  const membersList = document.getElementById('acompanhantes_lista');
+  const familiaresList = document.getElementById('familiares_lista');
+  const bondeList = document.getElementById('bonde_membros_lista');
+  const legacyList = document.getElementById('acompanhantes_lista');
+  const divisaoFilter = document.getElementById('filtro_divisao_bonde');
+  const contagemEl = document.getElementById('acompanhantes_contagem');
+
   let membersLoaded = false;
+  let allMembers = [];
+  const selectedCompanionIds = new Set();
+  window.selectedCompanionIds = selectedCompanionIds;
+
+  function updateCount() {
+    const totalSelected = selectedCompanionIds.size;
+    if (contagemEl) {
+      contagemEl.textContent = totalSelected === 0
+        ? 'Nenhum integrante ou acompanhante selecionado.'
+        : `${totalSelected} selecionado(s) para o bonde/viagem.`;
+    }
+  }
+
+  function renderBondeMembers(members, selectedDivisao = '') {
+    if (!bondeList) return;
+    bondeList.replaceChildren();
+
+    const filtered = selectedDivisao
+      ? members.filter(m => (m.divisao || 'Sem Divisão') === selectedDivisao)
+      : members;
+
+    if (filtered.length === 0) {
+      const empty = document.createElement('div');
+      empty.style.cssText = 'color: var(--text-muted); font-size: 0.85rem; padding: 0.5rem;';
+      empty.textContent = selectedDivisao
+        ? `Nenhum membro cadastrado nesta divisão (${selectedDivisao}).`
+        : 'Nenhum membro do motoclube disponível.';
+      bondeList.append(empty);
+      return;
+    }
+
+    // Agrupa por divisão
+    const byDiv = {};
+    filtered.forEach(m => {
+      const d = m.divisao || 'Divisão Não Informada';
+      if (!byDiv[d]) byDiv[d] = [];
+      byDiv[d].push(m);
+    });
+
+    Object.keys(byDiv).sort().forEach(divName => {
+      const divHeader = document.createElement('div');
+      divHeader.style.cssText = 'font-weight: 700; font-size: 0.85rem; color: var(--gp-blue); padding: 0.35rem 0.5rem; background: rgba(0, 176, 255, 0.08); border-radius: 4px; margin-top: 0.4rem; margin-bottom: 0.25rem; display: flex; justify-content: space-between;';
+      divHeader.innerHTML = `<span>📍 ${divName}</span> <small style="color:var(--text-muted); font-weight:normal;">${byDiv[divName].length} membro(s)</small>`;
+      bondeList.append(divHeader);
+
+      byDiv[divName].forEach(member => {
+        const label = document.createElement('label');
+        label.className = 'companion-member';
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.value = member.id;
+        checkbox.name = 'bonde_member_option';
+        if (selectedCompanionIds.has(member.id)) {
+          checkbox.checked = true;
+        }
+        const name = document.createElement('span');
+        const role = [member.grau, member.funcao].filter(Boolean).join(' - ');
+        name.textContent = `${member.nome_colete || 'Integrante'}${role ? ` (${role})` : ''}`;
+
+        checkbox.addEventListener('change', () => {
+          if (checkbox.checked) selectedCompanionIds.add(checkbox.value);
+          else selectedCompanionIds.delete(checkbox.value);
+          updateCount();
+        });
+        label.append(checkbox, name);
+        bondeList.append(label);
+      });
+    });
+  }
+
   companionRadios.forEach(r => {
     r.addEventListener('change', () => {
-      acompanhanteBox.style.display = r.value === 'Sim' ? 'block' : 'none';
+      if (acompanhanteBox) acompanhanteBox.style.display = r.value === 'Sim' ? 'block' : 'none';
       if (r.value === 'Sim' && r.checked && !membersLoaded) {
         membersLoaded = true;
         fetch('/api/members').then(async response => {
-          const members = await response.json();
-          if (!response.ok) throw new Error(members.error || 'Não foi possível listar integrantes.');
-          membersList.replaceChildren();
-          if (members.length === 0) {
-            document.getElementById('acompanhantes_contagem').textContent = 'Nenhum acompanhante cadastrado.';
-            return;
-          }
-          const relPriority = {
-            'esposa': 1,
-            'filho(a)': 2, 'filho': 2, 'filha': 2,
-            'neto(a)': 3, 'neto': 3, 'neta': 3,
-            'sobrinho(a)': 4, 'sobrinho': 4, 'sobrinha': 4,
-            'amigo(a)': 5, 'amigo': 5, 'amiga': 5,
-            'nenhum': 6
-          };
-          members.sort((a, b) => {
-            const prioA = relPriority[(a.relacao || 'nenhum').toLowerCase()] || 99;
-            const prioB = relPriority[(b.relacao || 'nenhum').toLowerCase()] || 99;
-            if (prioA !== prioB) return prioA - prioB;
-            return (a.nome || a.nome_colete || '').localeCompare(b.nome || b.nome_colete || '');
-          });
-          members.forEach(member => {
-            const label = document.createElement('label');
-            label.className = 'companion-member';
-            const checkbox = document.createElement('input');
-            checkbox.type = 'checkbox';
-            checkbox.value = member.id;
-            checkbox.name = 'companion_option';
-            const name = document.createElement('span');
-            if (member.kind === 'contact') {
-              const relText = member.relacao && member.relacao !== 'Nenhum' ? ` - ${member.relacao.toLowerCase()}` : '';
-              name.textContent = `${member.nome}${relText} · ${member.telefone}`;
+          const items = await response.json();
+          if (!response.ok) throw new Error(items.error || 'Não foi possível listar integrantes.');
+          allMembers = items;
+
+          // 1. FAMILIARES (kind === 'contact')
+          const contacts = items.filter(i => i.kind === 'contact');
+          if (familiaresList) {
+            familiaresList.replaceChildren();
+            if (contacts.length === 0) {
+              const empty = document.createElement('div');
+              empty.style.cssText = 'color: var(--text-muted); font-size: 0.85rem; padding: 0.5rem;';
+              empty.innerHTML = 'Nenhum familiar cadastrado. <a href="/conta" style="color:var(--issi-orange);text-decoration:underline;">Cadastre na sua conta</a>.';
+              familiaresList.append(empty);
             } else {
-              const role = [member.grau, member.funcao].filter(Boolean).join(' - ');
-              name.textContent = `${member.nome_colete}${role ? ` (${role})` : ''}`;
+              contacts.forEach(contact => {
+                const label = document.createElement('label');
+                label.className = 'companion-member';
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.value = contact.id;
+                checkbox.name = 'family_companion_option';
+                const name = document.createElement('span');
+                const relText = contact.relacao && contact.relacao !== 'Nenhum' ? ` (${contact.relacao})` : '';
+                name.textContent = `${contact.nome}${relText} · ${contact.telefone}`;
+
+                checkbox.addEventListener('change', () => {
+                  if (checkbox.checked) selectedCompanionIds.add(checkbox.value);
+                  else selectedCompanionIds.delete(checkbox.value);
+                  updateCount();
+                });
+                label.append(checkbox, name);
+                familiaresList.append(label);
+              });
             }
-            label.append(checkbox, name);
-            membersList.append(label);
-          });
-          membersList.addEventListener('change', event => {
-            const selected = membersList.querySelectorAll('input:checked');
-            if (selected.length > 4 && event.target.matches('input')) {
-              event.target.checked = false;
-              alert('Você pode selecionar no máximo quatro acompanhantes.');
-            }
-            document.getElementById('acompanhantes_contagem').textContent = `${membersList.querySelectorAll('input:checked').length} de 4 selecionados`;
-          });
+          }
+
+          // 2. MEMBROS DO MOTOCLUBE (kind === 'member')
+          const clubMembers = items.filter(i => i.kind === 'member');
+          if (divisaoFilter) {
+            const divs = [...new Set(clubMembers.map(m => m.divisao || 'Sem Divisão'))].sort();
+            divisaoFilter.replaceChildren();
+            const allOpt = document.createElement('option');
+            allOpt.value = '';
+            allOpt.textContent = `Todas as Divisões (${divs.length})`;
+            divisaoFilter.append(allOpt);
+            divs.forEach(d => {
+              const opt = document.createElement('option');
+              opt.value = d;
+              opt.textContent = d;
+              divisaoFilter.append(opt);
+            });
+            divisaoFilter.addEventListener('change', () => {
+              renderBondeMembers(clubMembers, divisaoFilter.value);
+            });
+          }
+
+          renderBondeMembers(clubMembers, '');
+
+          // Compatibilidade caso legacyList ainda exista
+          if (legacyList && !familiaresList) {
+            legacyList.replaceChildren();
+            items.forEach(member => {
+              const label = document.createElement('label');
+              label.className = 'companion-member';
+              const checkbox = document.createElement('input');
+              checkbox.type = 'checkbox';
+              checkbox.value = member.id;
+              checkbox.name = 'companion_option';
+              const name = document.createElement('span');
+              if (member.kind === 'contact') {
+                const relText = member.relacao && member.relacao !== 'Nenhum' ? ` (${member.relacao})` : '';
+                name.textContent = `${member.nome}${relText} · ${member.telefone}`;
+              } else {
+                const role = [member.grau, member.funcao].filter(Boolean).join(' - ');
+                name.textContent = `${member.nome_colete}${role ? ` (${role})` : ''}`;
+              }
+              checkbox.addEventListener('change', () => {
+                if (checkbox.checked) selectedCompanionIds.add(checkbox.value);
+                else selectedCompanionIds.delete(checkbox.value);
+                updateCount();
+              });
+              label.append(checkbox, name);
+              legacyList.append(label);
+            });
+          }
+
+          updateCount();
         }).catch(error => {
           membersLoaded = false;
-          membersList.textContent = error.message;
+          if (familiaresList) familiaresList.textContent = error.message;
+          if (bondeList) bondeList.textContent = error.message;
         });
       }
     });
@@ -609,7 +725,9 @@ function setupFormSubmission() {
     formData.forEach((val, key) => {
       payload[key] = val;
     });
-    payload.companion_ids = [...document.querySelectorAll('#acompanhantes_lista input:checked')].map(input => input.value);
+    const checkedInDom = [...document.querySelectorAll('#acompanhante_box input[type="checkbox"]:checked, #acompanhantes_lista input:checked')].map(input => input.value);
+    const selectedSet = window.selectedCompanionIds ? [...window.selectedCompanionIds] : [];
+    payload.companion_ids = [...new Set([...selectedSet, ...checkedInDom])];
 
     try {
       const response = await fetch('/api/viagens', {

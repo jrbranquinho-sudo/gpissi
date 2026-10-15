@@ -226,16 +226,16 @@
 
       </section>
 
-      <!-- SECTION 4: ACOMPANHANTE(S) -->
+      <!-- SECTION 4: ACOMPANHANTE(S) & CRIAR BONDE -->
       <section class="form-section">
         <div class="section-header">
-          <span class="icon">👥</span> ACOMPANHANTE(S)
+          <span class="icon">👥</span> ACOMPANHANTE(S) & CRIAR BONDE
         </div>
 
         <div class="companion-toggle-box">
-          <span style="font-size: 0.9rem; font-weight: 600; color: var(--text-muted);">Vai acompanhado?</span>
+          <span style="font-size: 0.9rem; font-weight: 600; color: var(--text-muted);">Vai acompanhado ou em Bonde?</span>
           <label class="radio-pill">
-            <input type="radio" name="vai_acompanhado" value="Não" checked> Não
+            <input type="radio" name="vai_acompanhado" value="Não" checked> Não (Solo)
           </label>
           <label class="radio-pill">
             <input type="radio" name="vai_acompanhado" value="Sim"> Sim
@@ -243,9 +243,32 @@
         </div>
 
         <div class="form-group" id="acompanhante_box" style="display: none;">
-          <label>Acompanhantes cadastrados (até 4)</label>
-          <div id="acompanhantes_lista" class="companion-members" aria-live="polite">Carregando integrantes...</div>
-          <small id="acompanhantes_contagem" style="color:var(--text-muted);">Selecione de um a quatro integrantes.</small>
+          <!-- GRUPO 1: FAMILIARES DO INTEGRANTE -->
+          <div style="margin-bottom: 1.25rem;">
+            <div style="font-weight: 700; color: var(--issi-orange); margin-bottom: 0.35rem; display: flex; align-items: center; gap: 0.5rem;">
+              <span>🏡</span> ACOMPANHANTES FAMILIARES (Cadastrados na sua conta)
+            </div>
+            <div id="familiares_lista" class="companion-members" aria-live="polite">Carregando familiares...</div>
+            <small id="familiares_aviso" style="color:var(--text-muted);"></small>
+          </div>
+
+          <!-- GRUPO 2: INTEGRANTES DO BONDE (MEMBROS DO MOTOCLUBE POR DIVISÃO) -->
+          <div>
+            <div style="font-weight: 700; color: var(--gp-blue); margin-bottom: 0.4rem; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem;">
+              <span style="display: flex; align-items: center; gap: 0.5rem;"><span>🏍️</span> INTEGRANTES DO BONDE (Membros por Divisão)</span>
+              <div style="display: flex; align-items: center; gap: 0.4rem;">
+                <label for="filtro_divisao_bonde" style="font-size: 0.8rem; margin: 0; color: var(--text-muted);">Divisão:</label>
+                <select id="filtro_divisao_bonde" class="form-control" style="font-size: 0.82rem; padding: 0.2rem 0.5rem; width: auto; min-width: 170px;">
+                  <option value="">Todas as Divisões</option>
+                </select>
+              </div>
+            </div>
+            <div id="bonde_membros_lista" class="companion-members" aria-live="polite">Carregando integrantes do motoclube...</div>
+          </div>
+
+          <div style="margin-top: 0.75rem;">
+            <small id="acompanhantes_contagem" style="color:var(--text-muted);">Nenhum integrante selecionado.</small>
+          </div>
         </div>
       </section>
 

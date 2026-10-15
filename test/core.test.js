@@ -184,3 +184,71 @@ test('evaluateTripOverdue identifica quando o piloto ultrapassa a previsão sem 
   const resClosed = gps.evaluateTripOverdue(closedTrip, time1245, 30);
   assert.equal(resClosed.isOverdue, false);
 });
+
+test('matchDivision aninha variações de digitação de Pires do Rio à Regional e Comando', () => {
+  const { matchDivision } = require('../divisoes');
+
+  const variations = [
+    'Divisão Pires do Rio',
+    'Divisao Pires do Rio',
+    'divisao pires do rio',
+    'Divsão Pires do Rio - GO1',
+    'Pires do Rio'
+  ];
+
+  for (const v of variations) {
+    const matched = matchDivision(v);
+    assert.equal(matched.divisao, 'Divisão Pires do Rio', `Falhou para variação: ${v}`);
+    assert.equal(matched.regional, 'REGIONAL GOIÁS I - GO', `Regional incorreta para: ${v}`);
+    assert.equal(matched.comando, 'Comando Regional XLVIII', `Comando incorreto para: ${v}`);
+  }
+});
+
+test('buildWhatsAppProtocolMessage formata acompanhante com referência única sem duplicidade', () => {
+  const viagemComAcomp = {
+    id: 'INS-TEST-ACOMP',
+    status: 'EM ANDAMENTO',
+    origem: 'Goiânia - GO',
+    data_saida: '2026-10-14',
+    hora_saida: '09:00',
+    destino: 'Pires do Rio - GO',
+    previsao_chegada: '11:00',
+    nome_colete: 'White',
+    grau: 'MEMBRO',
+    vai_acompanhado: 'Sim',
+    acompanhantes: [
+      { nome_colete: 'Pedro - neto(a)', grau: 'Neto(a)' },
+      { nome_colete: 'Maria', grau: 'Mãe' },
+      { nome_colete: 'Carlos', grau: 'Pai' },
+      { nome_colete: 'Ana', grau: 'Irmã(o)' },
+      { nome_colete: 'Lucas', grau: 'Sobrinho(a)' },
+      { nome_colete: 'Fernanda', grau: 'Cunhada' }
+    ]
+  };
+
+  const msg = gps.buildWhatsAppProtocolMessage(viagemComAcomp, 'https://gpissi.vercel.app/tracker?id=INS-TEST-ACOMP');
+
+  // Não deve conter 'neto(a)(Neto(a))'
+  assert.equal(msg.includes('neto(a)(Neto(a))'), false);
+  assert.equal(msg.includes('neto(a) (Neto(a))'), false);
+  // Deve conter apenas uma referência limpa: 'Pedro - Neto(a)'
+  assert.ok(msg.includes('Pedro - Neto(a)'));
+  assert.ok(msg.includes('Maria - Mãe'));
+  assert.ok(msg.includes('Carlos - Pai'));
+  assert.ok(msg.includes('Ana - Irmã(o)'));
+  assert.ok(msg.includes('Lucas - Sobrinho(a)'));
+  assert.ok(msg.includes('Fernanda - Cunhada'));
+});
+
+test('isPointInRouteCorridor tolera desvios na rota mantendo margem dinâmica de até 350 km', () => {
+  const origemPires = { lat: -17.30138, lon: -48.27868 };
+  const destinoCaldas = { lat: -17.74083, lon: -48.63815 };
+
+  // Ponto no trajeto (~10km)
+  const palmelo = { lat: -17.326, lng: -48.422 };
+  assert.equal(gps.isPointInRouteCorridor(palmelo.lat, palmelo.lng, origemPires, destinoCaldas), true);
+
+  // Desvio moderado na estrada (~87km - ex: contorno por Catalão)
+  const catalao = { lat: -18.1602, lng: -47.9354 };
+  assert.equal(gps.isPointInRouteCorridor(catalao.lat, catalao.lng, origemPires, destinoCaldas, 120), true);
+});

@@ -293,15 +293,36 @@ async function consumeChallenge(id) {
 async function listMembers() {
   const result = await client.execute('SELECT id, profile FROM users WHERE email_verified = 1 ORDER BY email');
   return result.rows.map(row => {
-    const profile = JSON.parse(row.profile);
+    let profile = {};
+    try {
+      profile = JSON.parse(row.profile);
+    } catch (_) {}
     return {
       id: row.id,
       kind: 'member',
       nome_colete: profile.nome_colete,
       grau: profile.funcao_grau || [profile.grau, profile.funcao].filter(Boolean).join(' - '),
-      funcao: profile.funcao || ''
+      funcao: profile.funcao || '',
+      divisao: profile.divisao || 'Sem Divisão',
+      regional: profile.regional || '',
+      comando: profile.comando || ''
     };
   });
+}
+
+async function updateUserProfile(userId, profileUpdates) {
+  const user = await findUserById(userId);
+  if (!user) return null;
+  let profile = {};
+  try {
+    profile = JSON.parse(user.profile);
+  } catch (_) {}
+  const updatedProfile = { ...profile, ...profileUpdates };
+  await client.execute({
+    sql: 'UPDATE users SET profile = ? WHERE id = ?',
+    args: [JSON.stringify(updatedProfile), userId]
+  });
+  return updatedProfile;
 }
 
 async function listTrips() {
@@ -352,6 +373,7 @@ module.exports = {
   findChallenge,
   consumeChallenge,
   listMembers,
+  updateUserProfile,
   listOwnedContacts,
   replaceOwnedContacts,
   listUserVehicles,

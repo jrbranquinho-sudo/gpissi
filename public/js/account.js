@@ -147,7 +147,7 @@ document.getElementById('logoutButton').addEventListener('click', async () => {
 function renderCompanionInputs(companions = []) {
   const container = document.getElementById('accountCompanionsFields');
   container.replaceChildren();
-  const relations = ['Nenhum', 'Esposa', 'Filho(a)', 'Neto(a)', 'Sobrinho(a)', 'Amigo(a)'];
+  const relations = ['Nenhum', 'Esposa', 'Esposo', 'Filho(a)', 'Neto(a)', 'Mãe', 'Pai', 'Irmã(o)', 'Sobrinho(a)', 'Cunhada', 'Cunhado', 'Amigo(a)', 'Outros'];
   for (let index = 0; index < 4; index += 1) {
     const companion = companions[index] || {};
     const row = document.createElement('div');
@@ -200,7 +200,7 @@ function renderCompanionInputs(companions = []) {
 function renderEmergencyContactInputs(contacts = []) {
   const container = document.getElementById('emergencyContactsFields');
   container.replaceChildren();
-  const relations = ['Nenhum', 'Esposa', 'Filho(a)', 'Neto(a)', 'Sobrinho(a)', 'Amigo(a)'];
+  const relations = ['Nenhum', 'Esposa', 'Esposo', 'Filho(a)', 'Neto(a)', 'Mãe', 'Pai', 'Irmã(o)', 'Sobrinho(a)', 'Cunhada', 'Cunhado', 'Amigo(a)', 'Outros'];
   for (let index = 0; index < 3; index += 1) {
     const contact = contacts[index] || {};
     const row = document.createElement('div');
@@ -335,7 +335,23 @@ fetch('/api/auth/me').then(async response => {
   document.getElementById('sessionView').hidden = false;
   const profile = result.user.profile;
   const role = profile.funcao_grau || [profile.grau, profile.funcao].filter(Boolean).join(' - ');
-  document.getElementById('sessionProfile').textContent = `${profile.nome_colete} | ${role} | ${result.user.email}`;
+  const divInfo = profile.divisao ? `${profile.divisao}${profile.regional ? ` (${profile.regional})` : ''}` : 'Sem Divisão cadastrada';
+  document.getElementById('sessionProfile').textContent = `${profile.nome_colete} | ${role} | ${divInfo} | ${result.user.email}`;
+
+  // Detalhes da Divisão atual e aviso para usuários já cadastrados sem Divisão
+  const currentDivEl = document.getElementById('currentDivisaoDetails');
+  const alertEl = document.getElementById('missingDivisaoAlert');
+  if (profile.divisao && profile.divisao !== 'Sem Divisão') {
+    if (currentDivEl) {
+      currentDivEl.innerHTML = `<strong>📍 Divisão:</strong> ${profile.divisao}<br><span style="color:var(--text-muted);font-size:0.85rem;">Regional: ${profile.regional || 'Geral'} | Comando: ${profile.comando || 'Insanos MC'}</span>`;
+    }
+    if (alertEl) alertEl.style.display = 'none';
+  } else {
+    if (currentDivEl) {
+      currentDivEl.innerHTML = `<span style="color:#ef4444;font-weight:600;">⚠️ Nenhuma Divisão vinculada. Atualize abaixo para aninhar com sua Regional e Comando.</span>`;
+    }
+    if (alertEl) alertEl.style.display = 'block';
+  }
   const companionsResponse = await fetch('/api/account/companions');
   const companions = await companionsResponse.json();
   renderCompanionInputs(companionsResponse.ok ? companions : []);
@@ -392,3 +408,46 @@ fetch('/api/auth/me').then(async response => {
     return item;
   }));
 }).catch(() => {});
+
+// Carregar lista de divisões no datalist
+fetch('/api/divisoes').then(r => r.json()).then(divs => {
+  const dList = document.getElementById('divisoesList');
+  if (dList && Array.isArray(divs)) {
+    dList.replaceChildren(...divs.map(d => {
+      const opt = document.createElement('option');
+      opt.value = d.divisao;
+      opt.label = `${d.regional || ''} - ${d.comando || ''}`;
+      return opt;
+    }));
+  }
+}).catch(() => {});
+
+// Atualização de Divisão
+const updateDivForm = document.getElementById('updateDivisaoForm');
+if (updateDivForm) {
+  updateDivForm.addEventListener('submit', async e => {
+    e.preventDefault();
+    const divInput = document.getElementById('accountDivisaoInput');
+    const msg = document.getElementById('divisaoUpdateMessage');
+    const val = (divInput.value || '').trim();
+    if (!val) return;
+    try {
+      msg.textContent = 'Atualizando...';
+      msg.style.color = 'var(--text-muted)';
+      const res = await sendJson('/api/account/divisao', { divisao: val });
+      msg.textContent = '✓ Divisão atualizada com sucesso!';
+      msg.style.color = '#00e676';
+      const prof = res.profile;
+      const currentDivEl = document.getElementById('currentDivisaoDetails');
+      if (currentDivEl) {
+        currentDivEl.innerHTML = `<strong>📍 Divisão:</strong> ${prof.divisao}<br><span style="color:var(--text-muted);font-size:0.85rem;">Regional: ${prof.regional || ''} | Comando: ${prof.comando || ''}</span>`;
+      }
+      const alertEl = document.getElementById('missingDivisaoAlert');
+      if (alertEl) alertEl.style.display = 'none';
+      divInput.value = prof.divisao;
+    } catch (err) {
+      msg.textContent = err.message || 'Erro ao atualizar divisão.';
+      msg.style.color = '#ef4444';
+    }
+  });
+}
