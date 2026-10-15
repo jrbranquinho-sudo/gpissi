@@ -372,11 +372,11 @@
             </p>
           </div>
         </div>
-        <div style="display: flex; flex-direction: column; gap: 0.5rem; flex: 1; min-width: 280px; max-width: 480px;">
-          <div style="display: flex; gap: 0.5rem;">
+        <div style="display: flex; flex-direction: column; gap: 0.5rem; flex: 1; min-width: 280px; max-width: 480px; width: 100%;">
+          <div class="dash-divisao-input-group">
             <input type="text" id="dashInputDivisao" list="dashDivisoesList" class="form-control" placeholder="Ex: Divisão Pires do Rio..." style="flex: 1; padding: 0.65rem 0.9rem; font-size: 0.9rem; background: var(--bg-secondary); border: 1px solid var(--border-subtle); color: #fff; border-radius: var(--radius-sm);">
             <datalist id="dashDivisoesList"></datalist>
-            <button type="button" id="btnSalvarDivisaoDash" onclick="salvarDivisaoDashboard()" class="btn-primary-insano" style="padding: 0.65rem 1.2rem; font-size: 0.88rem; white-space: nowrap; cursor: pointer;">
+            <button type="button" id="btnSalvarDivisaoDash" onclick="salvarDivisaoDashboard()" class="btn-primary-insano dash-divisao-btn-salvar" style="padding: 0.65rem 1.2rem; font-size: 0.88rem; white-space: nowrap; cursor: pointer;">
               SALVAR
             </button>
           </div>
@@ -512,7 +512,7 @@
         <form id="returnTripForm" onsubmit="submitReturnTrip(event)">
           <input type="hidden" id="retTripId">
 
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+          <div class="return-datetime-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
             <div>
               <label style="font-size: 0.82rem; font-weight: 700; color: #cbd5e1; display: block; margin-bottom: 0.35rem;">
                 Data de Saída do Retorno *
@@ -560,7 +560,7 @@
 
               <!-- BONDE: MEMBROS DO MOTOCLUBE POR DIVISÃO -->
               <div style="background: var(--bg-card); padding: 0.6rem; border-radius: var(--radius-sm); border: 1px solid rgba(255,255,255,0.05);">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem; flex-wrap: wrap; gap: 0.3rem;">
+                <div class="ret-bonde-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem; flex-wrap: wrap; gap: 0.3rem;">
                   <span style="font-size: 0.8rem; font-weight: 700; color: var(--gp-blue); display: flex; align-items: center; gap: 0.35rem;">
                     <span>🏍️ CRIAR BONDE (MEMBROS DO MOTOCLUBE)</span>
                   </span>

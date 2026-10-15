@@ -397,6 +397,21 @@ textarea.form-control {
   min-height: 80px;
 }
 
+/* GRUPOS DE INPUT E BOTÕES RESPONSIVOS */
+.dash-divisao-input-group {
+  display: flex;
+  gap: 0.5rem;
+  width: 100%;
+  align-items: stretch;
+}
+
+.pilot-pin-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: stretch;
+  width: 100%;
+}
+
 /* AUTOCOMPLETE DROPDOWN */
 .autocomplete-list {
   position: absolute;
@@ -1464,6 +1479,91 @@ textarea.form-control {
   #map {
     height: 360px;
   }
+
+  /* ==========================================================================
+     PADRONIZAÇÃO MOBILE (CELULARES): CADA ELEMENTO EM SUA LINHA SEPARADA
+     ========================================================================== */
+  .dash-divisao-input-group,
+  .pilot-pin-row,
+  .bonde-header-row,
+  .bonde-filter-control,
+  .ret-bonde-header,
+  .return-datetime-grid,
+  .account-action-buttons,
+  .auth-toggle-buttons,
+  .security-challenge-actions,
+  .modal-actions,
+  .dash-header-actions,
+  .input-btn-group {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    width: 100% !important;
+    gap: 0.65rem !important;
+  }
+
+  .return-datetime-grid {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 0.75rem !important;
+  }
+
+  /* Garante que dentro desses containers cada controle ocupe a linha inteira */
+  .dash-divisao-input-group input,
+  .dash-divisao-input-group button,
+  .pilot-pin-row input,
+  .pilot-pin-row button,
+  .bonde-filter-control select,
+  .ret-bonde-header select,
+  .account-action-buttons a,
+  .account-action-buttons button,
+  .auth-toggle-buttons button,
+  .security-challenge-actions button,
+  .modal-actions a,
+  .modal-actions button {
+    width: 100% !important;
+    max-width: 100% !important;
+    flex: none !important;
+    display: block !important;
+    text-align: center;
+    box-sizing: border-box !important;
+  }
+
+  /* Formulários e campos de entrada mobile: cada caixa de texto ou dropdown em linha separada */
+  .form-group input,
+  .form-group select,
+  .form-group textarea,
+  input.form-control,
+  select.form-control,
+  textarea.form-control,
+  select {
+    width: 100% !important;
+    max-width: 100% !important;
+    display: block !important;
+    box-sizing: border-box !important;
+  }
+
+  /* Todos os botões ocupam 100% da largura em linhas separadas */
+  button.btn-primary-insano,
+  button.btn-secondary,
+  a.btn-primary-insano,
+  a.btn-secondary,
+  .btn-gps-checkin,
+  .btn-close-trip,
+  .btn-danger-insano,
+  .btn-copy,
+  .btn-whatsapp,
+  .btn-tracker-open {
+    width: 100% !important;
+    display: flex !important;
+    justify-content: center !important;
+    align-items: center !important;
+    box-sizing: border-box !important;
+  }
+
+  .form-control, input, select, textarea {
+    font-size: 16px !important; /* Evita zoom automático no iOS */
+  }
 }
 
 @media (max-width: 480px) {
@@ -1479,7 +1579,8 @@ textarea.form-control {
     gap: 0.4rem;
   }
   .nav-btn {
-    flex: 1 1 calc(50% - 0.4rem);
+    flex: 1 1 100%;
+    width: 100%;
     min-width: 0;
     justify-content: center;
     white-space: normal;
@@ -1492,9 +1593,6 @@ textarea.form-control {
   }
   .protocol-title {
     font-size: 1.2rem;
-  }
-  .form-control {
-    font-size: 16px; /* Evita zoom automático no iOS */
   }
 }
 
