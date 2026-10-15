@@ -187,7 +187,11 @@ async function triggerRouteCalculation() {
     if (res.ok) {
       const data = await res.json();
       if (data.previsao_chegada_hora) {
-        const stopText = data.stop_minutes ? ` | parada ${data.stop_minutes} min` : '';
+        const stopText = data.stop_minutes
+          ? (data.stop_count > 1
+              ? ` | ${data.stop_count} paradas (${data.stop_minutes} min)`
+              : ` | parada ${data.stop_minutes} min`)
+          : '';
         previsaoInput.value = `${data.previsao_chegada_hora} (${data.distance_km} km | ~${data.duration_text} | média ${data.average_speed_kmh} km/h${stopText})`;
       }
     }

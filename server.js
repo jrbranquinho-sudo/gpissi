@@ -918,7 +918,11 @@ async function calculateRouteDetailsInternal(origem, destino, data_saida, hora_s
 
   const durationH = Math.floor(durationSeconds / 3600);
   const durationM = Math.round((durationSeconds % 3600) / 60);
-  const stopText = estimate.stopMinutes ? ` | parada ${estimate.stopMinutes} min` : '';
+  const stopText = estimate.stopMinutes
+    ? (estimate.stopCount > 1
+        ? ` | ${estimate.stopCount} paradas (${estimate.stopMinutes} min)`
+        : ` | parada ${estimate.stopMinutes} min`)
+    : '';
 
   return {
     success: true,
@@ -930,6 +934,7 @@ async function calculateRouteDetailsInternal(origem, destino, data_saida, hora_s
     duration_text: `${durationH}h ${durationM}min`,
     average_speed_kmh: estimate.averageSpeedKmh,
     stop_minutes: estimate.stopMinutes,
+    stop_count: estimate.stopCount || 0,
     previsao_chegada_hora: previsaoHora,
     formatted_previsao: previsaoHora ? `${previsaoHora} (${distanceKm} km | ~${durationH}h ${durationM}min | média ${estimate.averageSpeedKmh} km/h${stopText})` : ''
   };

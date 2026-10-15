@@ -8,7 +8,8 @@ test('moto e carro usam média de 110 km/h', () => {
   assert.deepEqual(estimateDurationSeconds(110, 'MOTO'), {
     durationSeconds: 3600,
     averageSpeedKmh: 110,
-    stopMinutes: 0
+    stopMinutes: 0,
+    stopCount: 0
   });
   assert.equal(estimateDurationSeconds(110, 'CARRO').durationSeconds, 3600);
 });
@@ -17,20 +18,34 @@ test('ônibus usa média de 80 km/h', () => {
   assert.deepEqual(estimateDurationSeconds(80, 'ÔNIBUS'), {
     durationSeconds: 3600,
     averageSpeedKmh: 80,
-    stopMinutes: 0
+    stopMinutes: 0,
+    stopCount: 0
   });
 });
 
-test('adiciona 25 minutos quando a duração calculada excede 2 horas', () => {
-  // Moto a 110 km/h: 220 km = 2h exatas (sem parada adicional)
+test('adiciona parada de 25 minutos a cada 2 horas previstas (ex: 7 horas adiciona 3 intervalos)', () => {
+  // 110 km = 1h de estrada (sem parada)
+  assert.equal(estimateDurationSeconds(110, 'MOTO').stopMinutes, 0);
+  assert.equal(estimateDurationSeconds(110, 'MOTO').stopCount, 0);
+
+  // 220 km = 2h exatas de estrada (sem parada)
   assert.equal(estimateDurationSeconds(220, 'MOTO').stopMinutes, 0);
-  // Moto a 110 km/h: 221 km = 2h 0m 32s > 2h (adiciona 25 minutos = 1500 segundos)
-  assert.equal(estimateDurationSeconds(221, 'MOTO').durationSeconds, (221 / 110) * 3600 + 1500);
+  assert.equal(estimateDurationSeconds(220, 'MOTO').stopCount, 0);
+
+  // 221 km = > 2h de estrada (1 parada de 25 min)
+  assert.equal(estimateDurationSeconds(221, 'MOTO').stopCount, 1);
   assert.equal(estimateDurationSeconds(221, 'MOTO').stopMinutes, 25);
-  // Ônibus a 80 km/h: 160 km = 2h exatas (0 min de parada)
-  assert.equal(estimateDurationSeconds(160, 'ÔNIBUS').stopMinutes, 0);
-  // Ônibus a 80 km/h: 161 km > 2h (25 min de parada)
-  assert.equal(estimateDurationSeconds(161, 'ÔNIBUS').stopMinutes, 25);
+  assert.equal(estimateDurationSeconds(221, 'MOTO').durationSeconds, (221 / 110) * 3600 + 1500);
+
+  // 441 km = > 4h de estrada (2 paradas de 25 min = 50 min)
+  assert.equal(estimateDurationSeconds(441, 'MOTO').stopCount, 2);
+  assert.equal(estimateDurationSeconds(441, 'MOTO').stopMinutes, 50);
+
+  // 770 km a 110 km/h = 7 horas de estrada -> 3 intervalos de 25 minutos = 75 min (1h15m) -> total 8h15m
+  const sevenHoursTrip = estimateDurationSeconds(770, 'MOTO');
+  assert.equal(sevenHoursTrip.stopCount, 3);
+  assert.equal(sevenHoursTrip.stopMinutes, 75);
+  assert.equal(sevenHoursTrip.durationSeconds, (7 * 3600) + (3 * 25 * 60)); // 25200 + 4500 = 29700s (8h 15m)
 });
 
 test('sequência visual tem seis letras e valida somente seu HMAC', () => {
