@@ -19,6 +19,7 @@
   <meta name="apple-mobile-web-app-title" content="GPISSI">
   <meta name="theme-color" content="#ff6600">
   <meta name="mobile-web-app-capable" content="yes">
+  <script src="/js/searchable-select.js"></script>
   <script>
     // Valida autenticação do usuário logado
     fetch('/api/auth/me').then(res => {
@@ -1122,6 +1123,12 @@
       const selectReg = document.getElementById('dashSelectRegional');
       const selectDiv = document.getElementById('dashSelectDivisao');
       if (!selectCmd || !selectReg || !selectDiv) return;
+
+      if (typeof makeSearchableSelect === 'function') {
+        makeSearchableSelect(selectCmd, '1. Selecione ou digite o Comando...');
+        makeSearchableSelect(selectReg, '2. Selecione ou digite a Regional...');
+        makeSearchableSelect(selectDiv, '3. Selecione ou digite a Divisão...');
+      }
 
       try {
         if (!dashEstruturaCache || dashEstruturaCache.length === 0) {

@@ -349,7 +349,8 @@ fetch('/api/auth/me').then(async response => {
   document.getElementById('sessionView').hidden = false;
   const profile = result.user.profile;
   const role = profile.funcao_grau || [profile.grau, profile.funcao].filter(Boolean).join(' - ');
-  const divInfo = profile.divisao ? `${profile.divisao}${profile.regional ? ` (${profile.regional})` : ''}` : 'Sem Divisão cadastrada';
+  const formattedDivStructure = [profile.divisao, profile.regional, profile.comando].filter(Boolean).join(' | ');
+  const divInfo = formattedDivStructure || 'Sem Divisão cadastrada';
   document.getElementById('sessionProfile').textContent = `${profile.nome_colete} | ${role} | ${divInfo} | ${result.user.email}`;
 
   // Detalhes da Divisão atual e aviso para usuários já cadastrados sem Divisão
@@ -357,7 +358,7 @@ fetch('/api/auth/me').then(async response => {
   const alertEl = document.getElementById('missingDivisaoAlert');
   if (profile.divisao && profile.divisao !== 'Sem Divisão') {
     if (currentDivEl) {
-      currentDivEl.innerHTML = `<strong>📍 Divisão:</strong> ${profile.divisao}<br><span style="color:var(--text-muted);font-size:0.85rem;">Regional: ${profile.regional || 'Geral'} | Comando: ${profile.comando || 'Insanos MC'}</span>`;
+      currentDivEl.innerHTML = `<span style="font-weight: 700; color: #fff; font-size: 0.95rem;">${formattedDivStructure}</span>`;
     }
     if (alertEl) alertEl.style.display = 'none';
   } else {
@@ -475,6 +476,12 @@ async function obterEstrutura() {
 
 function configurarDropdownsEstrutura(selectComando, selectRegional, selectDivisao, preSelected = {}) {
   if (!selectComando || !selectRegional || !selectDivisao) return;
+
+  if (typeof makeSearchableSelect === 'function') {
+    makeSearchableSelect(selectComando, '1. Selecione ou digite o Comando...');
+    makeSearchableSelect(selectRegional, '2. Selecione ou digite a Regional...');
+    makeSearchableSelect(selectDivisao, '3. Selecione ou digite a Divisão...');
+  }
 
   function preencherRegionais(cmdObj, selectedRegNome = '', selectedDivNome = '') {
     selectRegional.innerHTML = '<option value="">Selecione uma Regional</option>';
@@ -616,7 +623,8 @@ if (updateDivForm) {
       const prof = res.profile;
       const currentDivEl = document.getElementById('currentDivisaoDetails');
       if (currentDivEl) {
-        currentDivEl.innerHTML = `<strong>📍 Divisão:</strong> ${prof.divisao}<br><span style="color:var(--text-muted);font-size:0.85rem;">Regional: ${prof.regional || ''} | Comando: ${prof.comando || ''}</span>`;
+        const textStr = [prof.divisao || divisao, prof.regional || regional, prof.comando || comando].filter(Boolean).join(' | ');
+        currentDivEl.innerHTML = `<span style="font-weight: 700; color: #fff; font-size: 0.95rem;">${textStr}</span>`;
       }
       const alertEl = document.getElementById('missingDivisaoAlert');
       if (alertEl) alertEl.style.display = 'none';

@@ -6,12 +6,30 @@ Documento oficial de versionamento e registro de mudanças do sistema **GPISSI (
 
 ## 📌 Sumário das Versões
 
+- [v1.4.1 - Dropdowns Pesquisáveis com Filtro em Tempo Real & Formato Unificado de Divisão](#v141---outubro2026)
 - [v1.4.0 - Integração da Estrutura de Divisões via API Externa & Eliminação de Arquivos Estáticos](#v140---outubro2026)
 - [v1.3.1 - Aplicativo Móvel Multiplataforma (React Native / Expo)](#v131---outubro2026)
 - [v1.3.0 - Remoção da Evolution API e Autonomia Total por Links WhatsApp](#v130---outubro2026)
 - [v1.2.0 - Paradas Técnicas Automáticas Acumuladas & Melhorias no Layout Mobile](#v120---outubro2026)
 - [v1.1.0 - Cadastro de Veículos por Placa, Desafio Visual HMAC & Persistência Turso](#v110---outubro2026)
 - [v1.0.0 - Lançamento Inicial do GPISSI](#v100---versão-inicial)
+
+---
+
+## [v1.4.1] - Outubro/2026
+### 🔍 Dropdowns Pesquisáveis com Filtro em Tempo Real & Formato Limpo de Divisão
+
+#### 🚀 Adicionado
+- **Dropdowns Pesquisáveis em Tempo Real (`makeSearchableSelect` / `searchable-select.js`)**:
+  - Permite digitar qualquer caractere (com suporte a busca parcial, sem distinção de acentos ou maiúsculas/minúsculas) nos campos de **Comando**, **Regional** e **Divisão**.
+  - A lista filtra instantaneamente conforme a digitação.
+  - Aplicado no cadastro do integrante, na tela de edição do perfil e no banner de atualização cadastral do dashboard.
+- **Componente e Estilização Visual**:
+  - Estilos customizados em `style.css` com seta indicativa (`▾`), realce de hover e animação de abertura.
+
+#### 🔄 Modificado
+- **Formatação de Exibição na Conta do Integrante**:
+  - Padronizada a exibição cadastral para o formato direto e limpo solicitado: `Divisão | Regional | Comando` (ex.: `Divisão Orizona | REGIONAL GOIÁS I - GO | Comando Regional XLVIII`), sem prefixos repetitivos.
 
 ---
 
