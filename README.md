@@ -14,6 +14,8 @@ O **GPISSI** (Gestão de Protocolo de Itinerário de Segurança do Insanos MC) �
 - 📡 **Radar ao Vivo**: [https://gpissi.vercel.app/radar](https://gpissi.vercel.app/radar)
 - 🔐 **Conta e autenticação**: [https://gpissi.vercel.app/conta](https://gpissi.vercel.app/conta)
 - 💻 **Ambiente Local**: `http://localhost:3000`
+- 📚 **Documentação Técnica Completa**: [documentation/README.md](documentation/README.md)
+- 📜 **Histórico de Versões e Alterações**: [documentation/CHANGELOG.md](documentation/CHANGELOG.md)
 
 ### 🗄️ Banco, contas e implantação
 

@@ -186,22 +186,6 @@ function loadDivisions() {
     }
   } catch (_) {}
 
-  // 3. Fallback legado data/divisoes_data.json se existir
-  const legacyDataPath = path.join(__dirname, 'data', 'divisoes_data.json');
-  if (fs.existsSync(legacyDataPath)) {
-    try {
-      const raw = JSON.parse(fs.readFileSync(legacyDataPath, 'utf8'));
-      divisionsList = raw.map(d => ({
-        ...d,
-        key_exact: cleanString(d.divisao_completa),
-        key_canonical: cleanString(d.divisao),
-        key_stripped: stripDivisionPrefix(d.base_name || d.divisao)
-      }));
-      divisionsList.sort((a, b) => a.divisao.localeCompare(b.divisao, 'pt-BR'));
-      return divisionsList;
-    } catch (_) {}
-  }
-
   return divisionsList;
 }
 
