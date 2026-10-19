@@ -1271,9 +1271,9 @@
               const checked = retPreselectedSet.has(m.id) ? 'checked' : '';
               const rel = m.relacao && m.relacao !== 'Nenhum' ? ` - ${m.relacao}` : '';
               return `
-                <label style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.82rem; color: #cbd5e1; cursor: pointer;">
-                  <input type="checkbox" name="ret_companion_option" value="${m.id}" ${checked} onchange="updateRetCompanionCount(event)">
-                  <span>${m.nome}${rel} &bull; ${m.telefone || ''}</span>
+                <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; color: #cbd5e1; cursor: pointer; width: 100%; box-sizing: border-box;">
+                  <input type="checkbox" name="ret_companion_option" value="${m.id}" ${checked} onchange="updateRetCompanionCount(event)" style="flex: 0 0 18px !important; width: 18px !important; height: 18px !important; margin: 0 !important;">
+                  <span style="flex: 1 1 auto; min-width: 0; word-break: normal; overflow-wrap: break-word; white-space: normal;">${m.nome}${rel} &bull; ${m.telefone || ''}</span>
                 </label>
               `;
             }).join('');
@@ -1314,9 +1314,9 @@
         const role = [m.grau, m.funcao].filter(Boolean).join(' - ');
         const div = m.divisao ? ` [${m.divisao}]` : '';
         return `
-          <label style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.82rem; color: #cbd5e1; cursor: pointer;">
-            <input type="checkbox" name="ret_companion_option" value="${m.id}" ${checked} onchange="updateRetCompanionCount(event)">
-            <span><strong>${m.nome_colete}</strong>${role ? ` (${role})` : ''}${div}</span>
+          <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; color: #cbd5e1; cursor: pointer; width: 100%; box-sizing: border-box;">
+            <input type="checkbox" name="ret_companion_option" value="${m.id}" ${checked} onchange="updateRetCompanionCount(event)" style="flex: 0 0 18px !important; width: 18px !important; height: 18px !important; margin: 0 !important;">
+            <span style="flex: 1 1 auto; min-width: 0; word-break: normal; overflow-wrap: break-word; white-space: normal;"><strong>${m.nome_colete}</strong>${role ? ` (${role})` : ''}${div}</span>
           </label>
         `;
       }).join('');

@@ -443,14 +443,19 @@ function setupCompanionToggle() {
       byDiv[divName].forEach(member => {
         const label = document.createElement('label');
         label.className = 'companion-member';
+        label.style.cssText = 'display: flex !important; flex-direction: row !important; align-items: center !important; gap: 0.75rem !important; width: 100% !important; box-sizing: border-box !important;';
         const checkbox = document.createElement('input');
         checkbox.type = 'checkbox';
+        checkbox.className = 'companion-checkbox';
+        checkbox.style.cssText = 'flex: 0 0 20px !important; width: 20px !important; min-width: 20px !important; max-width: 20px !important; height: 20px !important; margin: 0 !important; cursor: pointer;';
         checkbox.value = member.id;
         checkbox.name = 'bonde_member_option';
         if (selectedCompanionIds.has(member.id)) {
           checkbox.checked = true;
         }
         const name = document.createElement('span');
+        name.className = 'companion-name';
+        name.style.cssText = 'flex: 1 1 auto !important; min-width: 0 !important; white-space: normal !important; word-break: normal !important; overflow-wrap: break-word !important; line-height: 1.4 !important;';
         const role = [member.grau, member.funcao].filter(Boolean).join(' - ');
         name.textContent = `${member.nome_colete || 'Integrante'}${role ? ` (${role})` : ''}`;
 
@@ -488,11 +493,16 @@ function setupCompanionToggle() {
               contacts.forEach(contact => {
                 const label = document.createElement('label');
                 label.className = 'companion-member';
+                label.style.cssText = 'display: flex !important; flex-direction: row !important; align-items: center !important; gap: 0.75rem !important; width: 100% !important; box-sizing: border-box !important;';
                 const checkbox = document.createElement('input');
                 checkbox.type = 'checkbox';
+                checkbox.className = 'companion-checkbox';
+                checkbox.style.cssText = 'flex: 0 0 20px !important; width: 20px !important; min-width: 20px !important; max-width: 20px !important; height: 20px !important; margin: 0 !important; cursor: pointer;';
                 checkbox.value = contact.id;
                 checkbox.name = 'family_companion_option';
                 const name = document.createElement('span');
+                name.className = 'companion-name';
+                name.style.cssText = 'flex: 1 1 auto !important; min-width: 0 !important; white-space: normal !important; word-break: normal !important; overflow-wrap: break-word !important; line-height: 1.4 !important;';
                 const relText = contact.relacao && contact.relacao !== 'Nenhum' ? ` (${contact.relacao})` : '';
                 name.textContent = `${contact.nome}${relText} · ${contact.telefone}`;
 
@@ -535,11 +545,16 @@ function setupCompanionToggle() {
             items.forEach(member => {
               const label = document.createElement('label');
               label.className = 'companion-member';
+              label.style.cssText = 'display: flex !important; flex-direction: row !important; align-items: center !important; gap: 0.75rem !important; width: 100% !important; box-sizing: border-box !important;';
               const checkbox = document.createElement('input');
               checkbox.type = 'checkbox';
+              checkbox.className = 'companion-checkbox';
+              checkbox.style.cssText = 'flex: 0 0 20px !important; width: 20px !important; min-width: 20px !important; max-width: 20px !important; height: 20px !important; margin: 0 !important; cursor: pointer;';
               checkbox.value = member.id;
               checkbox.name = 'companion_option';
               const name = document.createElement('span');
+              name.className = 'companion-name';
+              name.style.cssText = 'flex: 1 1 auto !important; min-width: 0 !important; white-space: normal !important; word-break: normal !important; overflow-wrap: break-word !important; line-height: 1.4 !important;';
               if (member.kind === 'contact') {
                 const relText = member.relacao && member.relacao !== 'Nenhum' ? ` (${member.relacao})` : '';
                 name.textContent = `${member.nome}${relText} · ${member.telefone}`;
