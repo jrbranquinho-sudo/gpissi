@@ -12,8 +12,12 @@ function extractMunicipality(address = {}) {
 
 function buildTrackFeature(checkins = []) {
   const coordinates = checkins
-    .filter(point => isValidCoordinate(point.lat, point.lng))
-    .map(point => [Number(point.lng), Number(point.lat)]);
+    .map(point => {
+      const lat = point.latitude !== undefined ? point.latitude : point.lat;
+      const lng = point.longitude !== undefined ? point.longitude : point.lng;
+      return [Number(lng), Number(lat)];
+    })
+    .filter(([lng, lat]) => isValidCoordinate(lat, lng));
   if (coordinates.length < 2) return null;
   return {
     type: 'Feature',

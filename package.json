@@ -6,13 +6,21 @@
   "scripts": {
     "start": "node server.js",
     "test": "node --test",
-    "mobile": "npm --prefix mobile start"
+    "mobile": "npm --prefix mobile start",
+    "build:web": "node -e \"console.log('GPISSI Web assets ready in public/')\"",
+    "cap:sync": "cap sync",
+    "cap:android": "cap run android",
+    "cap:ios": "cap run ios",
+    "cap:open:android": "cap open android",
+    "cap:open:ios": "cap open ios"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@capacitor/core": "^8.5.3",
+    "@capgo/background-geolocation": "^8.4.14",
     "@libsql/client": "^0.18.0",
     "cors": "^2.8.6",
     "dotenv": "^18.0.4",
@@ -20,5 +28,10 @@
     "express-rate-limit": "^8.7.0",
     "helmet": "^8.3.0",
     "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@capacitor/android": "^8.5.3",
+    "@capacitor/cli": "^8.5.3",
+    "@capacitor/ios": "^8.5.3"
   }
 }

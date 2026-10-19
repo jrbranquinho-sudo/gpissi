@@ -1,0 +1,15 @@
+{
+  "appId": "com.insanosmc.gpissi",
+  "appName": "GPISSI",
+  "webDir": "public",
+  "bundledWebRuntime": false,
+  "server": {
+    "androidScheme": "https"
+  },
+  "plugins": {
+    "BackgroundGeolocation": {
+      "backgroundMessage": "GPISSI está registrando seu trajeto para a sua segurança na estrada.",
+      "backgroundTitle": "GPISSI - Rastreamento Ativo"
+    }
+  }
+}

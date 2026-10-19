@@ -80,7 +80,8 @@ export async function sendCheckin(tripId, { lat, lng, speed, altitude, accuracy,
   const payload = {
     lat: parseFloat(lat),
     lng: parseFloat(lng),
-    speed: speed != null ? Math.round(speed * 3.6) : undefined, // converte m/s para km/h
+    // Se a velocidade já estiver em km/h (ex: speedKmH), preserva; se for m/s (speed_mps), converte uma única vez
+    speed: speed != null && Number.isFinite(Number(speed)) ? Math.round(Number(speed)) : undefined,
     altitude: altitude != null ? Math.round(altitude) : undefined,
     accuracy: accuracy != null ? Math.round(accuracy) : undefined,
     cidade: cidade || 'Em trânsito na Rodovia',
@@ -101,6 +102,51 @@ export async function sendCheckin(tripId, { lat, lng, speed, altitude, accuracy,
     throw new Error(data.error || `Falha no check-in (${res.status})`);
   }
   return data;
+}
+
+/**
+ * Inicia sessão de rastreamento no backend
+ */
+export async function startTrackingSession(tripId, credentials = {}) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (credentials.token) headers['x-creator-token'] = credentials.token;
+  if (credentials.pin) headers['x-creator-pin'] = String(credentials.pin).trim();
+
+  const res = await fetch(`${currentBaseUrl}/api/viagens/${tripId}/tracking/start`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(credentials)
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Erro ao iniciar rastreamento');
+  return data;
+}
+
+/**
+ * Envia lote de pontos coletados offline ou contínuos
+ */
+export async function sendTrackingBatch(tripId, points, credentials = {}) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (credentials.token) headers['x-creator-token'] = credentials.token;
+  if (credentials.pin) headers['x-creator-pin'] = String(credentials.pin).trim();
+
+  const res = await fetch(`${currentBaseUrl}/api/viagens/${tripId}/tracking/points/batch`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ points, ...credentials })
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Erro ao sincronizar pontos');
+  return data;
+}
+
+/**
+ * Consulta status da sessão de rastreamento
+ */
+export async function fetchTrackingStatus(tripId) {
+  const res = await fetch(`${currentBaseUrl}/api/viagens/${tripId}/tracking/status`);
+  if (!res.ok) throw new Error('Erro ao consultar status de rastreamento');
+  return await res.json();
 }
 
 /**

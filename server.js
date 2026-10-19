@@ -124,7 +124,7 @@ function sanitizeString(str, maxLen = 200) {
 }
 
 function isValidTripId(id) {
-  return typeof id === 'string' && /^[A-Za-z0-9_-]{4,35}$/.test(id);
+  return typeof id === 'string' && /^[A-Za-z0-9_-]{4,64}$/.test(id);
 }
 
 function securelyMatches(value, expected) {
@@ -1849,6 +1849,385 @@ app.post('/api/viagens/:id/checkin', checkinLimiter, loadOptionalAccount, async 
     success: true,
     last_location: viagem.last_location,
     checkins_count: viagem.checkins.length
+  });
+});
+
+// ============================================================================
+// GPS BACKGROUND TRACKING & TELEMETRY API
+// ============================================================================
+
+// 1. Iniciar Sessão de Rastreamento
+app.post('/api/viagens/:id/tracking/start', pinAuthLimiter, loadOptionalAccount, async (req, res) => {
+  const { id } = req.params;
+  if (!isValidTripId(id)) return res.status(400).json({ error: 'ID de protocolo inválido.' });
+
+  const token = req.headers['x-creator-token'] || req.body?.token;
+  const pin = req.headers['x-creator-pin'] || req.body?.pin;
+
+  if (!token && !pin && !req.user) {
+    return res.status(401).json({ success: false, error: 'Autenticação necessária para gerenciar o rastreamento.' });
+  }
+
+  const viagem = await storage.findTrip(id);
+  if (!viagem) return res.status(404).json({ success: false, error: 'Protocolo de viagem não encontrado ou expirado.' });
+
+  if (!isTripCreator(req, viagem, token, pin)) {
+    return res.status(403).json({ success: false, error: 'ACESSO NEGADO: Apenas o autor do protocolo pode gerenciar o rastreamento.' });
+  }
+
+  if (viagem.status === 'CONCLUÍDA') {
+    return res.status(400).json({ success: false, error: 'Esta viagem já foi encerrada.' });
+  }
+
+  // Verifica se já existe uma sessão ativa
+  const existingActive = await storage.findActiveTrackingSessionByTrip(id);
+  if (existingActive) {
+    return res.json({
+      success: true,
+      message: 'Sessão de rastreamento já ativa.',
+      session_id: existingActive.id,
+      status: 'active',
+      session: existingActive
+    });
+  }
+
+  const session = await storage.createTrackingSession({
+    id: req.body?.session_id || crypto.randomUUID(),
+    tenant_id: 'insanos-mc',
+    viagem_id: id,
+    user_id: req.user?.id || viagem.owner_user_id || 'anonymous-creator',
+    vehicle_id: sanitizeString(req.body?.vehicle_id || viagem.transporte_placa || '', 20),
+    status: 'TRACKING',
+    started_at: new Date().toISOString()
+  });
+
+  res.status(201).json({
+    success: true,
+    session_id: session.id,
+    status: 'active',
+    session
+  });
+});
+
+// 2. Pausar Sessão
+app.post('/api/viagens/:id/tracking/pause', pinAuthLimiter, loadOptionalAccount, async (req, res) => {
+  const { id } = req.params;
+  if (!isValidTripId(id)) return res.status(400).json({ error: 'ID de protocolo inválido.' });
+
+  const token = req.headers['x-creator-token'] || req.body?.token;
+  const pin = req.headers['x-creator-pin'] || req.body?.pin;
+
+  if (!token && !pin && !req.user) {
+    return res.status(401).json({ success: false, error: 'Autenticação necessária.' });
+  }
+
+  const viagem = await storage.findTrip(id);
+  if (!viagem) return res.status(404).json({ success: false, error: 'Protocolo não encontrado.' });
+  if (!isTripCreator(req, viagem, token, pin)) {
+    return res.status(403).json({ success: false, error: 'ACESSO NEGADO.' });
+  }
+
+  const session = await storage.findActiveTrackingSessionByTrip(id);
+  if (!session) {
+    return res.status(404).json({ success: false, error: 'Nenhuma sessão ativa encontrada para pausar.' });
+  }
+
+  const updated = await storage.updateTrackingSession(session.id, {
+    status: 'PAUSED',
+    paused_at: new Date().toISOString()
+  });
+
+  res.json({
+    success: true,
+    message: 'Rastreamento pausado.',
+    status: 'paused',
+    session: updated
+  });
+});
+
+// 3. Retomar Sessão
+app.post('/api/viagens/:id/tracking/resume', pinAuthLimiter, loadOptionalAccount, async (req, res) => {
+  const { id } = req.params;
+  if (!isValidTripId(id)) return res.status(400).json({ error: 'ID de protocolo inválido.' });
+
+  const token = req.headers['x-creator-token'] || req.body?.token;
+  const pin = req.headers['x-creator-pin'] || req.body?.pin;
+
+  if (!token && !pin && !req.user) {
+    return res.status(401).json({ success: false, error: 'Autenticação necessária.' });
+  }
+
+  const viagem = await storage.findTrip(id);
+  if (!viagem) return res.status(404).json({ success: false, error: 'Protocolo não encontrado.' });
+  if (!isTripCreator(req, viagem, token, pin)) {
+    return res.status(403).json({ success: false, error: 'ACESSO NEGADO.' });
+  }
+
+  let session = await storage.findActiveTrackingSessionByTrip(id);
+  if (!session) {
+    const lastSession = await storage.getTrackingSessionStatus(id);
+    if (lastSession && lastSession.id) {
+      session = await storage.updateTrackingSession(lastSession.id, {
+        status: 'TRACKING',
+        resumed_at: new Date().toISOString()
+      });
+    } else {
+      session = await storage.createTrackingSession({
+        viagem_id: id,
+        user_id: req.user?.id || viagem.owner_user_id || 'anonymous-creator',
+        status: 'TRACKING',
+        started_at: new Date().toISOString()
+      });
+    }
+  } else if (session.status === 'PAUSED') {
+    session = await storage.updateTrackingSession(session.id, {
+      status: 'TRACKING',
+      resumed_at: new Date().toISOString()
+    });
+  }
+
+  res.json({
+    success: true,
+    message: 'Rastreamento retomado.',
+    status: 'active',
+    session
+  });
+});
+
+// 4. Encerrar Sessão
+app.post('/api/viagens/:id/tracking/stop', pinAuthLimiter, loadOptionalAccount, async (req, res) => {
+  const { id } = req.params;
+  if (!isValidTripId(id)) return res.status(400).json({ error: 'ID de protocolo inválido.' });
+
+  const token = req.headers['x-creator-token'] || req.body?.token;
+  const pin = req.headers['x-creator-pin'] || req.body?.pin;
+
+  if (!token && !pin && !req.user) {
+    return res.status(401).json({ success: false, error: 'Autenticação necessária.' });
+  }
+
+  const viagem = await storage.findTrip(id);
+  if (!viagem) return res.status(404).json({ success: false, error: 'Protocolo não encontrado.' });
+  if (!isTripCreator(req, viagem, token, pin)) {
+    return res.status(403).json({ success: false, error: 'ACESSO NEGADO.' });
+  }
+
+  const session = await storage.findActiveTrackingSessionByTrip(id);
+  let endedSession = session;
+  if (session) {
+    endedSession = await storage.updateTrackingSession(session.id, {
+      status: 'STOPPED',
+      ended_at: new Date().toISOString()
+    });
+  }
+
+  res.json({
+    success: true,
+    message: 'Sessão de rastreamento encerrada com sucesso.',
+    status: 'stopped',
+    session: endedSession
+  });
+});
+
+// 5. Envio em Lote de Pontos de Telemetria (Offline Queue Sync)
+app.post('/api/viagens/:id/tracking/points/batch', checkinLimiter, loadOptionalAccount, async (req, res) => {
+  const { id } = req.params;
+  if (!isValidTripId(id)) return res.status(400).json({ error: 'ID de protocolo inválido.' });
+
+  const token = req.headers['x-creator-token'] || req.body?.token;
+  const pin = req.headers['x-creator-pin'] || req.body?.pin;
+
+  if (!token && !pin && !req.user) {
+    return res.status(401).json({ success: false, error: 'Autenticação necessária para sincronizar pontos de rastreamento.' });
+  }
+
+  const viagem = await storage.findTrip(id);
+  if (!viagem) return res.status(404).json({ success: false, error: 'Protocolo de viagem não encontrado.' });
+
+  if (!isTripCreator(req, viagem, token, pin)) {
+    return res.status(403).json({ success: false, error: 'ACESSO NEGADO: Apenas o autor do protocolo pode sincronizar pontos de rastreamento.' });
+  }
+
+  if (viagem.status === 'CONCLUÍDA') {
+    return res.status(400).json({ success: false, error: 'Não é possível adicionar pontos a uma viagem já concluída.' });
+  }
+
+  if (!req.body || !Array.isArray(req.body.points) || req.body.points.length === 0) {
+    return res.status(400).json({ success: false, error: 'Nenhum ponto fornecido no lote.' });
+  }
+
+  const rawPoints = req.body.points;
+  if (rawPoints.length > 500) {
+    return res.status(400).json({ success: false, error: 'O tamanho máximo do lote é de 500 pontos por sincronização.' });
+  }
+
+  // Validação estrita de coordenadas de cada ponto do lote
+  for (const raw of rawPoints) {
+    if (!raw || typeof raw !== 'object') {
+      return res.status(400).json({ success: false, error: 'Ponto malformado no lote.' });
+    }
+    const lat = parseFloat(raw.latitude != null ? raw.latitude : raw.lat);
+    const lng = parseFloat(raw.longitude != null ? raw.longitude : raw.lng);
+    if (!gpsUtils.isValidCoordinate(lat, lng)) {
+      return res.status(400).json({ success: false, error: 'Coordenadas inválidas detectadas no lote de pontos.' });
+    }
+  }
+
+  let activeSession = await storage.findActiveTrackingSessionByTrip(id);
+  const sessionId = req.body?.session_id || activeSession?.id || crypto.randomUUID();
+
+  if (!activeSession) {
+    activeSession = await storage.createTrackingSession({
+      id: sessionId,
+      tenant_id: 'insanos-mc',
+      viagem_id: id,
+      user_id: req.user?.id || viagem.owner_user_id || 'anonymous-creator',
+      status: 'TRACKING',
+      started_at: new Date().toISOString()
+    });
+  }
+
+  const normalizedPoints = [];
+  const nowStr = new Date().toISOString();
+
+  for (const raw of rawPoints) {
+    const lat = parseFloat(raw.latitude != null ? raw.latitude : raw.lat);
+    const lng = parseFloat(raw.longitude != null ? raw.longitude : raw.lng);
+
+    // Tratamento de velocidade com garantia de conversão única (m/s -> km/h = m/s * 3.6)
+    let speedKmh = null;
+    let speedMps = null;
+    const unit = String(raw.speedUnit || raw.speed_unit || '').toLowerCase();
+
+    if (unit === 'mps' || unit === 'm/s') {
+      speedMps = Math.max(0, parseFloat(Number(raw.speed).toFixed(2)));
+      speedKmh = Math.round(speedMps * 3.6);
+    } else if (raw.speed_kmh != null && Number.isFinite(Number(raw.speed_kmh))) {
+      speedKmh = Math.max(0, Math.round(Number(raw.speed_kmh)));
+      speedMps = parseFloat((speedKmh / 3.6).toFixed(2));
+    } else if (raw.speed_mps != null && Number.isFinite(Number(raw.speed_mps))) {
+      speedMps = Math.max(0, parseFloat(Number(raw.speed_mps).toFixed(2)));
+      speedKmh = Math.round(speedMps * 3.6);
+    } else if (raw.speed != null && Number.isFinite(Number(raw.speed))) {
+      speedKmh = Math.max(0, Math.round(Number(raw.speed)));
+      speedMps = parseFloat((speedKmh / 3.6).toFixed(2));
+    }
+
+    const recordedAt = raw.recorded_at && !Number.isNaN(Date.parse(raw.recorded_at))
+      ? new Date(raw.recorded_at).toISOString()
+      : (raw.timestamp && !Number.isNaN(Date.parse(raw.timestamp)) ? new Date(raw.timestamp).toISOString() : nowStr);
+
+    normalizedPoints.push({
+      id: crypto.randomUUID(),
+      tenant_id: 'insanos-mc',
+      session_id: sessionId,
+      viagem_id: id,
+      point_uid: String(raw.point_uid || raw.id || crypto.randomUUID()),
+      latitude: lat,
+      longitude: lng,
+      accuracy_m: raw.accuracy_m != null ? Math.round(Number(raw.accuracy_m)) : (raw.accuracy != null ? Math.round(Number(raw.accuracy)) : null),
+      speed_mps: speedMps,
+      speed_kmh: speedKmh,
+      heading: raw.heading != null && Number.isFinite(Number(raw.heading)) ? Math.round(Number(raw.heading)) : null,
+      altitude: raw.altitude != null && Number.isFinite(Number(raw.altitude)) ? Math.round(Number(raw.altitude)) : null,
+      recorded_at: recordedAt,
+      received_at: nowStr,
+      cidade: sanitizeString(raw.cidade || '', 100)
+    });
+  }
+
+  // Ordena cronologicamente
+  normalizedPoints.sort((a, b) => new Date(a.recorded_at).getTime() - new Date(b.recorded_at).getTime());
+
+  const batchResult = await storage.insertTrackingPointsBatch(normalizedPoints);
+
+  const lastPoint = normalizedPoints[normalizedPoints.length - 1];
+  await storage.updateTrackingSession(sessionId, {
+    last_point_at: lastPoint.recorded_at
+  });
+
+  if (!viagem.checkins) viagem.checkins = [];
+  const lastCoord = {
+    lat: lastPoint.latitude,
+    lng: lastPoint.longitude,
+    speed: lastPoint.speed_kmh,
+    speed_kmh: lastPoint.speed_kmh,
+    timestamp: lastPoint.recorded_at,
+    cidade: lastPoint.cidade || viagem.last_city || 'Em deslocamento na Rodovia',
+    descricao: 'Telemetria GPS Automática (Segundo Plano)',
+    tipo: 'gps'
+  };
+
+  viagem.last_location = lastCoord;
+  viagem.updated_at = nowStr;
+
+  const previousLast = viagem.checkins[viagem.checkins.length - 1];
+  const dist = previousLast ? gpsUtils.haversineDistanceKm(previousLast.lat, previousLast.lng, lastPoint.latitude, lastPoint.longitude) : Infinity;
+  if (dist >= 0.25 || !previousLast) {
+    viagem.checkins.push(lastCoord);
+    if (viagem.checkins.length > 500) viagem.checkins = viagem.checkins.slice(-500);
+  }
+
+  await storage.saveTrip(viagem);
+
+  res.json({
+    success: true,
+    session_id: sessionId,
+    inserted: batchResult.inserted,
+    duplicates: batchResult.duplicates,
+    total: normalizedPoints.length,
+    last_location: lastCoord
+  });
+});
+
+// 6. Consultar Pontos da Rota Real (Para Radar e Mapas)
+app.get('/api/viagens/:id/tracking/points', async (req, res) => {
+  const { id } = req.params;
+  if (!isValidTripId(id)) return res.status(400).json({ error: 'ID de protocolo inválido.' });
+
+  const limit = Math.min(2000, Math.max(1, parseInt(req.query.limit, 10) || 1000));
+  const since = req.query.since && !Number.isNaN(Date.parse(req.query.since)) ? new Date(req.query.since).toISOString() : null;
+
+  const points = await storage.listTrackingPointsByTrip(id, limit, since);
+  res.json({
+    success: true,
+    viagem_id: id,
+    count: points.length,
+    points
+  });
+});
+
+// 7. Consultar Status Atual do Rastreamento
+app.get('/api/viagens/:id/tracking/status', async (req, res) => {
+  const { id } = req.params;
+  if (!isValidTripId(id)) return res.status(400).json({ error: 'ID de protocolo inválido.' });
+
+  const status = await storage.getTrackingSessionStatus(id);
+  const viagem = await storage.findTrip(id);
+
+  let sessionStatus = 'stopped';
+  if (status) {
+    if (status.is_active || status.status === 'TRACKING' || status.status === 'STARTING') {
+      sessionStatus = 'active';
+    } else if (status.status === 'PAUSED') {
+      sessionStatus = 'paused';
+    }
+  }
+
+  res.json({
+    success: true,
+    viagem_id: id,
+    trip_status: viagem?.status || 'NÃO ENCONTRADA',
+    session: {
+      status: sessionStatus,
+      session_id: status?.session_id || status?.id || null,
+      ended_at: status?.ended_at || null,
+      started_at: status?.started_at || null
+    },
+    tracking: status || { is_active: false, status: 'IDLE' },
+    points_count: status?.points_count || 0,
+    last_point: status?.last_point || null,
+    last_location: viagem?.last_location || null
   });
 });
 

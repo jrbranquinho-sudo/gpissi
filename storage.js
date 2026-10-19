@@ -76,7 +76,44 @@ function initializeStorage() {
           UNIQUE (user_id, plate)
         )`,
         `CREATE INDEX IF NOT EXISTS vehicles_owner ON vehicles(user_id, updated_at DESC)`,
-        'CREATE INDEX IF NOT EXISTS trips_owner_created ON trips(owner_user_id, created_at DESC)'
+        'CREATE INDEX IF NOT EXISTS trips_owner_created ON trips(owner_user_id, created_at DESC)',
+        `CREATE TABLE IF NOT EXISTS tracking_sessions (
+          id TEXT PRIMARY KEY,
+          tenant_id TEXT NOT NULL DEFAULT 'insanos-mc',
+          viagem_id TEXT NOT NULL,
+          user_id TEXT NOT NULL,
+          vehicle_id TEXT DEFAULT '',
+          status TEXT NOT NULL DEFAULT 'IDLE',
+          started_at TEXT,
+          paused_at TEXT,
+          resumed_at TEXT,
+          ended_at TEXT,
+          last_point_at TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        )`,
+        `CREATE INDEX IF NOT EXISTS idx_tracking_sessions_viagem ON tracking_sessions(viagem_id, status)`,
+        `CREATE INDEX IF NOT EXISTS idx_tracking_sessions_user ON tracking_sessions(user_id, created_at DESC)`,
+        `CREATE TABLE IF NOT EXISTS tracking_points (
+          id TEXT PRIMARY KEY,
+          tenant_id TEXT NOT NULL DEFAULT 'insanos-mc',
+          session_id TEXT NOT NULL,
+          viagem_id TEXT NOT NULL,
+          point_uid TEXT NOT NULL UNIQUE,
+          latitude REAL NOT NULL,
+          longitude REAL NOT NULL,
+          accuracy_m REAL,
+          speed_mps REAL,
+          speed_kmh REAL,
+          heading REAL,
+          altitude REAL,
+          recorded_at TEXT NOT NULL,
+          received_at TEXT NOT NULL,
+          created_at TEXT NOT NULL
+        )`,
+        `CREATE INDEX IF NOT EXISTS idx_tracking_points_viagem ON tracking_points(viagem_id, recorded_at ASC)`,
+        `CREATE INDEX IF NOT EXISTS idx_tracking_points_session ON tracking_points(session_id, recorded_at ASC)`,
+        `CREATE UNIQUE INDEX IF NOT EXISTS idx_tracking_points_uid ON tracking_points(point_uid)`
       ], 'write');
 
       const columns = await client.execute('PRAGMA table_info(users)');
@@ -364,6 +401,180 @@ async function deleteTrip(id) {
   await client.execute({ sql: 'DELETE FROM trips WHERE id = ?', args: [id] });
 }
 
+// ============================================================================
+// TRACKING SESSIONS & POINTS (Turso/libSQL)
+// ============================================================================
+
+async function createTrackingSession(session) {
+  const now = new Date().toISOString();
+  const sessionId = session.id || crypto.randomUUID();
+  await client.execute({
+    sql: `INSERT INTO tracking_sessions (id, tenant_id, viagem_id, user_id, vehicle_id, status, started_at, paused_at, resumed_at, ended_at, last_point_at, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    args: [
+      sessionId,
+      session.tenant_id || 'insanos-mc',
+      session.viagem_id,
+      session.user_id,
+      session.vehicle_id || '',
+      session.status || 'TRACKING',
+      session.started_at || now,
+      session.paused_at || null,
+      session.resumed_at || null,
+      session.ended_at || null,
+      session.last_point_at || null,
+      session.created_at || now,
+      session.updated_at || now
+    ]
+  });
+  return findTrackingSessionById(sessionId);
+}
+
+async function findTrackingSessionById(id) {
+  const result = await client.execute({
+    sql: `SELECT * FROM tracking_sessions WHERE id = ?`,
+    args: [id]
+  });
+  return result.rows[0] || null;
+}
+
+async function findActiveTrackingSessionByTrip(viagemId) {
+  const result = await client.execute({
+    sql: `SELECT * FROM tracking_sessions WHERE viagem_id = ? AND status IN ('STARTING', 'TRACKING', 'PAUSED', 'SYNC_PENDING') ORDER BY created_at DESC LIMIT 1`,
+    args: [viagemId]
+  });
+  return result.rows[0] || null;
+}
+
+async function updateTrackingSession(id, updates) {
+  const now = new Date().toISOString();
+  const fields = [];
+  const args = [];
+
+  for (const [key, value] of Object.entries(updates)) {
+    if (['status', 'paused_at', 'resumed_at', 'ended_at', 'last_point_at', 'vehicle_id'].includes(key)) {
+      fields.push(`${key} = ?`);
+      args.push(value);
+    }
+  }
+
+  fields.push(`updated_at = ?`);
+  args.push(now);
+  args.push(id);
+
+  await client.execute({
+    sql: `UPDATE tracking_sessions SET ${fields.join(', ')} WHERE id = ?`,
+    args
+  });
+  return findTrackingSessionById(id);
+}
+
+async function insertTrackingPointsBatch(points = []) {
+  if (!Array.isArray(points) || points.length === 0) return { inserted: 0, duplicates: 0, total: 0 };
+  const now = new Date().toISOString();
+  let inserted = 0;
+  let duplicates = 0;
+
+  const statements = [];
+  for (const pt of points) {
+    if (!pt || !pt.point_uid || typeof pt.latitude !== 'number' || typeof pt.longitude !== 'number') continue;
+    statements.push({
+      sql: `INSERT OR IGNORE INTO tracking_points
+        (id, tenant_id, session_id, viagem_id, point_uid, latitude, longitude, accuracy_m, speed_mps, speed_kmh, heading, altitude, recorded_at, received_at, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: [
+        pt.id || crypto.randomUUID(),
+        pt.tenant_id || 'insanos-mc',
+        pt.session_id || '',
+        pt.viagem_id,
+        pt.point_uid,
+        pt.latitude,
+        pt.longitude,
+        pt.accuracy_m != null ? pt.accuracy_m : null,
+        pt.speed_mps != null ? pt.speed_mps : null,
+        pt.speed_kmh != null ? pt.speed_kmh : null,
+        pt.heading != null ? pt.heading : null,
+        pt.altitude != null ? pt.altitude : null,
+        pt.recorded_at || now,
+        pt.received_at || now,
+        now
+      ]
+    });
+  }
+
+  if (statements.length > 0) {
+    const results = await client.batch(statements, 'write');
+    for (const res of results) {
+      if (res.rowsAffected && res.rowsAffected > 0) {
+        inserted++;
+      } else {
+        duplicates++;
+      }
+    }
+  }
+
+  return { inserted, duplicates, total: points.length };
+}
+
+async function listTrackingPointsByTrip(viagemId, limit = 1000, since = null) {
+  let sql = `SELECT * FROM tracking_points WHERE viagem_id = ?`;
+  const args = [viagemId];
+  if (since) {
+    sql += ` AND recorded_at > ?`;
+    args.push(since);
+  }
+  sql += ` ORDER BY recorded_at ASC LIMIT ?`;
+  args.push(Number(limit) || 1000);
+
+  const result = await client.execute({ sql, args });
+  return result.rows.map(row => ({
+    ...row,
+    speed: row.speed_kmh != null ? row.speed_kmh : (row.speed_mps != null ? row.speed_mps * 3.6 : null),
+    accuracy: row.accuracy_m
+  }));
+}
+
+async function getTrackingSessionStatus(viagemId) {
+  let session = await findActiveTrackingSessionByTrip(viagemId);
+  if (!session) {
+    const lastSession = await client.execute({
+      sql: `SELECT * FROM tracking_sessions WHERE viagem_id = ? ORDER BY created_at DESC LIMIT 1`,
+      args: [viagemId]
+    });
+    session = lastSession.rows[0] ? { ...lastSession.rows[0], is_active: false } : null;
+  }
+  if (!session) return null;
+
+  const countResult = await client.execute({
+    sql: `SELECT COUNT(*) AS total FROM tracking_points WHERE viagem_id = ?`,
+    args: [viagemId]
+  });
+  const lastPointResult = await client.execute({
+    sql: `SELECT * FROM tracking_points WHERE viagem_id = ? ORDER BY recorded_at DESC LIMIT 1`,
+    args: [viagemId]
+  });
+
+  const isActive = ['STARTING', 'TRACKING', 'SYNC_PENDING'].includes(session.status);
+  const totalPoints = Number(countResult.rows[0]?.total || 0);
+
+  return {
+    ...session,
+    session_id: session.id,
+    is_active: isActive,
+    status: session.status,
+    points_count: totalPoints,
+    total_points: totalPoints,
+    last_point: lastPointResult.rows[0] || null
+  };
+}
+
+async function deleteTrackingDataByTrip(viagemId) {
+  await client.batch([
+    { sql: `DELETE FROM tracking_points WHERE viagem_id = ?`, args: [viagemId] },
+    { sql: `DELETE FROM tracking_sessions WHERE viagem_id = ?`, args: [viagemId] }
+  ], 'write');
+}
+
 module.exports = {
   initializeStorage,
   findUserByEmail,
@@ -384,5 +595,13 @@ module.exports = {
   findTrip,
   saveTrip,
   deleteTrip,
-  deleteExpiredTrips
+  deleteExpiredTrips,
+  createTrackingSession,
+  findTrackingSessionById,
+  findActiveTrackingSessionByTrip,
+  updateTrackingSession,
+  insertTrackingPointsBatch,
+  listTrackingPointsByTrip,
+  getTrackingSessionStatus,
+  deleteTrackingDataByTrip
 };

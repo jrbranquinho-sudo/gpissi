@@ -347,23 +347,38 @@
         let lng = -46.63;
         let locName = t.origem;
         let isLastGps = false;
+        let lastTimestamp = null;
+        let speed = null;
 
-        if (t.checkins && t.checkins.length > 1) {
+        if (t.last_location && Number.isFinite(Number(t.last_location.latitude !== undefined ? t.last_location.latitude : t.last_location.lat))) {
+          lat = Number(t.last_location.latitude !== undefined ? t.last_location.latitude : t.last_location.lat);
+          lng = Number(t.last_location.longitude !== undefined ? t.last_location.longitude : t.last_location.lng);
+          locName = t.last_location.cidade || 'Último Ponto de Tracking';
+          lastTimestamp = t.last_location.recorded_at || t.last_location.timestamp;
+          speed = t.last_location.speed;
+          isLastGps = true;
+        } else if (t.checkins && t.checkins.length > 1) {
           const last = t.checkins[t.checkins.length - 1];
           lat = last.lat;
           lng = last.lng;
           locName = last.cidade || 'Último Ponto GPS no Trajeto';
+          lastTimestamp = last.timestamp;
           isLastGps = true;
         } else if (t.origem_geo) {
           lat = t.origem_geo.lat;
           lng = t.origem_geo.lon;
         }
 
+        const isStale = lastTimestamp ? (Date.now() - new Date(lastTimestamp).getTime() > 10 * 60 * 1000) : false;
+        const markerBg = isStale ? '#f59e0b' : '#ff6600';
+        const markerShadow = isStale ? 'rgba(245, 158, 11, 0.95)' : 'rgba(255, 102, 0, 0.95)';
+
         const el = document.createElement('div');
         el.className = 'custom-maplibre-marker';
         el.innerHTML = `
-          <div style="background: #ff6600; color: #000; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 2.5px solid #000; box-shadow: 0 0 15px rgba(255, 102, 0, 0.95); cursor: pointer;">
+          <div style="background: ${markerBg}; color: #000; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 2.5px solid #000; box-shadow: 0 0 15px ${markerShadow}; cursor: pointer; position: relative;">
             <img src="/images/caveirasembg.png" style="height: 22px; width: auto;" alt="Caveira">
+            ${isStale ? '<span style="position: absolute; top: -4px; right: -4px; font-size: 10px;">⚠️</span>' : ''}
           </div>
         `;
 
@@ -371,19 +386,33 @@
         const wazeLink = `https://waze.com/ul?ll=${lat},${lng}&navigate=yes`;
         const appleLink = `https://maps.apple.com/?daddr=${lat},${lng}&dirflg=d`;
 
+        const statusNote = isStale
+          ? '<span style="color: #f59e0b; font-weight: 700;">⚠️ Sinal em sombra (> 10 min)</span>'
+          : (isLastGps ? '<span style="color: #00e676; font-weight: 700;">🟢 Ponto em tempo real</span>' : 'Ponto inicial de partida');
+
+        const speedLine = (speed !== null && speed !== undefined)
+          ? `<div style="font-size: 11px; color: #00e676; font-weight: 700;">⚡ Velocidade: ${Math.round(speed)} km/h</div>`
+          : '';
+
+        const timeLine = lastTimestamp
+          ? `<div style="font-size: 10px; color: #666;">🕒 Último registro: ${new Date(lastTimestamp).toLocaleTimeString('pt-BR')}</div>`
+          : '';
+
         const popup = new maplibregl.Popup({ offset: 25 }).setHTML(`
-          <div style="font-family: sans-serif; color: #000; min-width: 210px;">
+          <div style="font-family: sans-serif; color: #000; min-width: 220px;">
             <div style="font-weight: bold; font-size: 14px; color: #ff6600; display: flex; align-items: center; gap: 4px;">
               <img src="/images/caveirasembg.png" style="height: 18px; width: auto;" alt="Caveira">
               ${t.nome_colete}
             </div>
             <div style="font-size: 12px; color: #555;">${t.grau || 'Integrante'}</div>
             <div style="margin: 6px 0; font-size: 12px;"><strong>Rota:</strong> ${t.origem} ➔ ${t.destino}</div>
-            <div style="font-size: 11px; color: #222; margin-bottom: 4px;">
+            <div style="font-size: 11px; color: #222; margin-bottom: 2px;">
               <strong>Ponto no Trajeto:</strong> ${locName}
             </div>
-            <div style="font-size: 10px; color: #666; margin-bottom: 8px;">
-              ${isLastGps ? '🟢 Ponto atualizado (Último registro mantido se sem sinal)' : 'Ponto inicial de partida'}
+            ${speedLine}
+            ${timeLine}
+            <div style="font-size: 10px; margin: 4px 0 8px 0;">
+              ${statusNote}
             </div>
             <div style="display: flex; gap: 5px; flex-wrap: wrap;">
               <a href="${googleLink}" target="_blank" style="background: #1a73e8; color: #fff; padding: 4px 8px; border-radius: 4px; font-size: 11px; text-decoration: none; font-weight: bold;">Google Maps</a>

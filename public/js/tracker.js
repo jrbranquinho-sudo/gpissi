@@ -279,14 +279,51 @@ async function loadTripData(tripId, isSilent = false, shareToken = '') {
     currentTrip = trip;
     isCreatorAuth = trip.is_creator || false;
 
+    // Carrega pontos de tracking em segundo plano gravados
+    try {
+      const tpRes = await fetch(`/api/viagens/${tripId}/tracking/points?limit=500`, { headers, credentials: 'same-origin' });
+      if (tpRes.ok) {
+        const tpData = await tpRes.json();
+        if (Array.isArray(tpData.points) && tpData.points.length > 0) {
+          trip.tracking_points = tpData.points;
+          const latestPoint = tpData.points[tpData.points.length - 1];
+          if (latestPoint) {
+            const statSpeed = document.getElementById('statSpeed');
+            if (statSpeed && latestPoint.speed !== null && latestPoint.speed !== undefined) {
+              statSpeed.textContent = `${Math.round(latestPoint.speed)} km/h`;
+            }
+            const statLastUpdate = document.getElementById('statLastUpdate');
+            if (statLastUpdate && latestPoint.recorded_at) {
+              const dt = new Date(latestPoint.recorded_at);
+              statLastUpdate.textContent = dt.toLocaleTimeString('pt-BR');
+            }
+            const telSpeed = document.getElementById('telemetrySpeed');
+            if (telSpeed && latestPoint.speed !== null && latestPoint.speed !== undefined) {
+              telSpeed.textContent = `${Math.round(latestPoint.speed)} km/h`;
+            }
+            const telAcc = document.getElementById('telemetryAccuracy');
+            if (telAcc && latestPoint.accuracy !== null && latestPoint.accuracy !== undefined) {
+              telAcc.textContent = `±${Math.round(latestPoint.accuracy)}m`;
+            }
+          }
+        }
+      }
+    } catch (_) {}
+
     renderTripDetails(trip);
     renderMapElements(trip);
     updateExternalMapLinks(trip);
     updateCreatorPanelUI(trip);
 
-    // If creator is viewing and trip is open, start 5-minute auto tracker
-    if (isCreatorAuth && trip.status === 'EM ANDAMENTO' && !autoTrackingInterval) {
-      start5MinuteAutoTracking(tripId);
+    // Se o integrante autor estiver visualizando e a viagem estiver aberta, ativa o tracking
+    if (isCreatorAuth && trip.status === 'EM ANDAMENTO') {
+      const tm = setupTrackingManager(tripId);
+      if (tm && tm.status === TrackingStatus.IDLE) {
+        tm.startTracking().catch(e => console.warn('Falha ao iniciar tracking manager:', e));
+      }
+      if (!autoTrackingInterval) {
+        start5MinuteAutoTracking(tripId);
+      }
     }
 
   } catch (err) {
@@ -1194,7 +1231,10 @@ function renderMapElements(trip) {
     });
   }
 
-  drawRecordedTrack(trip.checkins || []);
+  const recordedList = (trip.tracking_points && trip.tracking_points.length > 0)
+    ? trip.tracking_points
+    : (trip.checkins || []);
+  drawRecordedTrack(recordedList);
   if (hasOrigin && hasDestination) fetchRoadRoute([oGeo.lon, oGeo.lat], [dGeo.lon, dGeo.lat]);
   else fitRouteBounds();
 }
@@ -1313,9 +1353,10 @@ function drawRouteOnMap(geojson) {
         'line-cap': 'round'
       },
       paint: {
-        'line-color': '#ff6600',
-        'line-width': 6,
-        'line-opacity': 0.95
+        'line-color': '#2563eb', // Planned route: Blue
+        'line-width': 4,
+        'line-opacity': 0.85,
+        'line-dasharray': [2, 2] // Dashed indicating planned
       }
     };
     map.addLayer(routeLayer, map.getLayer('recorded-track-layer') ? 'recorded-track-layer' : undefined);
@@ -1337,7 +1378,11 @@ function drawRecordedTrack(checkins) {
     type: 'line',
     source: 'recorded-track',
     layout: { 'line-join': 'round', 'line-cap': 'round' },
-    paint: { 'line-color': '#00b0ff', 'line-width': 4, 'line-opacity': 0.95 }
+    paint: {
+      'line-color': '#ff6600', // Recorded track: Solid Insanos Orange
+      'line-width': 5,
+      'line-opacity': 0.95
+    }
   });
 }
 
@@ -1355,7 +1400,17 @@ function fitRouteBounds() {
 
   if (currentTrip.checkins) {
     currentTrip.checkins.forEach(chk => {
-      if (GPISSIGps.isValidCoordinate(chk.lat, chk.lng)) bounds.extend([chk.lng, chk.lat]);
+      const lat = chk.latitude !== undefined ? chk.latitude : chk.lat;
+      const lng = chk.longitude !== undefined ? chk.longitude : chk.lng;
+      if (GPISSIGps.isValidCoordinate(lat, lng)) bounds.extend([Number(lng), Number(lat)]);
+    });
+  }
+
+  if (currentTrip.tracking_points) {
+    currentTrip.tracking_points.forEach(pt => {
+      const lat = pt.latitude !== undefined ? pt.latitude : pt.lat;
+      const lng = pt.longitude !== undefined ? pt.longitude : pt.lng;
+      if (GPISSIGps.isValidCoordinate(lat, lng)) bounds.extend([Number(lng), Number(lat)]);
     });
   }
 
@@ -1365,12 +1420,127 @@ function fitRouteBounds() {
   }
 }
 
+let modularTrackingManager = null;
+
+function setupTrackingManager(tripId) {
+  if (modularTrackingManager) return modularTrackingManager;
+  if (typeof TrackingManager === 'undefined') return null;
+
+  modularTrackingManager = new TrackingManager({
+    tripId,
+    token: userAuthToken,
+    pin: userAuthPin,
+    onStatusChange: (status) => {
+      const label = document.getElementById('trackingStatusLabel');
+      const pauseBtn = document.getElementById('btnPauseTracking');
+      const resumeBtn = document.getElementById('btnResumeTracking');
+      const signalBadge = document.getElementById('signalStatusBadge');
+
+      if (status === TrackingStatus.TRACKING) {
+        if (label) {
+          label.textContent = '🟢 TRACKING EM SEGUNDO PLANO: ATIVO';
+          label.style.color = '#00e676';
+        }
+        if (pauseBtn) pauseBtn.style.display = 'inline-flex';
+        if (resumeBtn) resumeBtn.style.display = 'none';
+        if (signalBadge) {
+          signalBadge.style.color = '#00e676';
+          signalBadge.style.background = 'rgba(0,230,118,0.1)';
+          signalBadge.innerHTML = '📶 Sinal: Conectado (Tracking Ativo)';
+        }
+      } else if (status === TrackingStatus.PAUSED) {
+        if (label) {
+          label.textContent = '🟡 TRACKING EM SEGUNDO PLANO: PAUSADO';
+          label.style.color = '#f59e0b';
+        }
+        if (pauseBtn) pauseBtn.style.display = 'none';
+        if (resumeBtn) resumeBtn.style.display = 'inline-flex';
+        if (signalBadge) {
+          signalBadge.style.color = '#f59e0b';
+          signalBadge.style.background = 'rgba(245,158,11,0.15)';
+          signalBadge.innerHTML = '⏸️ Tracking Pausado';
+        }
+      } else if (status === TrackingStatus.SYNC_PENDING) {
+        if (label) {
+          label.textContent = '🟠 TRACKING: AGUARDANDO SINCRONIZAÇÃO';
+          label.style.color = '#f97316';
+        }
+      } else if (status === TrackingStatus.STOPPED) {
+        if (label) {
+          label.textContent = '⚪ TRACKING: PARADO';
+          label.style.color = '#94a3b8';
+        }
+        if (pauseBtn) pauseBtn.style.display = 'none';
+        if (resumeBtn) resumeBtn.style.display = 'none';
+      }
+    },
+    onLocationUpdate: (point) => {
+      const speedKmH = Math.round(point.speed || 0);
+      const statSpeed = document.getElementById('statSpeed');
+      if (statSpeed) statSpeed.textContent = `${speedKmH} km/h`;
+      const telSpeed = document.getElementById('telemetrySpeed');
+      if (telSpeed) telSpeed.textContent = `${speedKmH} km/h`;
+
+      const telAcc = document.getElementById('telemetryAccuracy');
+      if (telAcc) telAcc.textContent = `±${Math.round(point.accuracy || 0)}m`;
+
+      const telQueue = document.getElementById('telemetryQueue');
+      if (telQueue && modularTrackingManager) telQueue.textContent = String(modularTrackingManager.queue.size());
+
+      const statLastUpdate = document.getElementById('statLastUpdate');
+      if (statLastUpdate) {
+        statLastUpdate.textContent = new Date().toLocaleTimeString('pt-BR');
+      }
+
+      if (currentTrip) {
+        if (!currentTrip.tracking_points) currentTrip.tracking_points = [];
+        currentTrip.tracking_points.push(point);
+        drawRecordedTrack(currentTrip.tracking_points);
+      }
+    }
+  });
+
+  return modularTrackingManager;
+}
+
 function setupEventListeners(tripId) {
   const btnCloseTrip = document.getElementById('btnCloseTrip');
   const closeTripModal = document.getElementById('closeTripModal');
   const btnCancelCloseModal = document.getElementById('btnCancelCloseModal');
   const btnCancelCloseTrip = document.getElementById('btnCancelCloseTrip');
   const btnConfirmCloseTrip = document.getElementById('btnConfirmCloseTrip');
+  const btnPauseTracking = document.getElementById('btnPauseTracking');
+  const btnResumeTracking = document.getElementById('btnResumeTracking');
+
+  if (btnPauseTracking) {
+    btnPauseTracking.addEventListener('click', async () => {
+      btnPauseTracking.disabled = true;
+      try {
+        if (modularTrackingManager) {
+          await modularTrackingManager.pauseTracking();
+        }
+      } catch (err) {
+        alert('Erro ao pausar tracking: ' + err.message);
+      } finally {
+        btnPauseTracking.disabled = false;
+      }
+    });
+  }
+
+  if (btnResumeTracking) {
+    btnResumeTracking.addEventListener('click', async () => {
+      btnResumeTracking.disabled = true;
+      try {
+        if (modularTrackingManager) {
+          await modularTrackingManager.resumeTracking();
+        }
+      } catch (err) {
+        alert('Erro ao retomar tracking: ' + err.message);
+      } finally {
+        btnResumeTracking.disabled = false;
+      }
+    });
+  }
 
   if (btnCloseTrip) {
     btnCloseTrip.addEventListener('click', () => {
@@ -1392,6 +1562,11 @@ function setupEventListeners(tripId) {
       btnConfirmCloseTrip.textContent = 'Encerrando...';
 
       try {
+        // Encerra sessão de tracking modular se ativa
+        if (modularTrackingManager) {
+          try { await modularTrackingManager.stopTracking(); } catch (_) {}
+        }
+
         // Descarrega qualquer ponto offline pendente antes de fechar o protocolo
         if (navigator.onLine) {
           try { await syncOfflineCheckins(tripId); } catch (_) {}
