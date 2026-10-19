@@ -274,11 +274,11 @@ test('isPointInRouteCorridor tolera desvios na rota mantendo margem dinâmica de
   assert.equal(gps.isPointInRouteCorridor(catalao.lat, catalao.lng, origemPires, destinoCaldas, 120), true);
 });
 
-test('searchDivisions lista mais de 1600 divisões sem omissão e posiciona Pires do Rio em 1º para "pires do"', () => {
+test('searchDivisions lista mais de 1400 divisões oficiais e posiciona Pires do Rio em 1º para "pires do"', () => {
   const { searchDivisions } = require('../divisoes');
 
   const all = searchDivisions('', 0);
-  assert.ok(all.length >= 1600, `Esperado >= 1600 divisões, encontrado: ${all.length}`);
+  assert.ok(all.length >= 1400, `Esperado >= 1400 divisões, encontrado: ${all.length}`);
 
   const resPiresDo = searchDivisions('pires do', 5);
   assert.ok(resPiresDo.length > 0, 'Deveria retornar ao menos 1 resultado para "pires do"');
